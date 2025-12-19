@@ -53,6 +53,7 @@ object BankParserFactory {
         OldHickoryParser(),  // Old Hickory Credit Union (USA)
         LaxmiBankParser(),  // Laxmi Sunrise Bank (Nepal)
         CBEBankParser(),  // Commercial Bank of Ethiopia
+        BankOfAbyssiniaParser(), // Bank of Abyssinia (Ethiopia)
         EverestBankParser(),  // Everest Bank (Nepal)
         BancolombiaParser(),  // Bancolombia (Colombia)
         MashreqBankParser(),  // Mashreq Bank (UAE)

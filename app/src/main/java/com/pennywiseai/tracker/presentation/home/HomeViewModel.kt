@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.math.BigDecimal
 import java.time.LocalDate
+import kotlin.math.min
 import javax.inject.Inject
 
 @HiltViewModel
@@ -126,11 +127,34 @@ class HomeViewModel @Inject constructor(
                     }
                 }
 
+                // Compute per-bank balances (converted to selected currency when possible)
+                val bankNames = balances.map { it.bankName ?: "Unknown Bank" }.distinct()
+                val bankBalances = bankNames.associateWith { bank ->
+                    val accountsForBank = regularAccounts.filter { (it.bankName ?: "Unknown Bank") == bank }
+                    accountsForBank.sumOf { account ->
+                        if (account.currency == selectedCurrency) account.balance
+                        else currencyConversionService.convertAmount(
+                            amount = account.balance,
+                            fromCurrency = account.currency,
+                            toCurrency = selectedCurrency
+                        ) ?: account.balance
+                    }
+                }
+
+                // Initialize per-bank visibility preferences if not set
+                val currentHistory = _uiState.value.banksShowHistory
+                val currentBalancePrefs = _uiState.value.banksShowBalance
+                val defaultHistory = if (currentHistory.isEmpty()) bankNames.toSet() else currentHistory
+                val defaultBalance = if (currentBalancePrefs.isEmpty()) bankNames.toSet() else currentBalancePrefs
+
                 _uiState.value = _uiState.value.copy(
                     accountBalances = regularAccounts,  // Only regular bank accounts
                     creditCards = creditCards,           // Only credit cards
                     totalBalance = totalBalanceInSelectedCurrency,
-                    totalAvailableCredit = totalAvailableCreditInSelectedCurrency
+                    totalAvailableCredit = totalAvailableCreditInSelectedCurrency,
+                    bankBalances = bankBalances,
+                    banksShowHistory = defaultHistory,
+                    banksShowBalance = defaultBalance
                 )
             }
         }
@@ -163,6 +187,8 @@ class HomeViewModel @Inject constructor(
                     recentTransactions = transactions,
                     isLoading = false
                 )
+                // Update per-bank counts
+                updateBankTransactionCounts()
             }
         }
         
@@ -354,13 +380,119 @@ class HomeViewModel @Inject constructor(
                     }
                 }
 
+                // Compute per-bank balances (converted to selected currency when possible)
+                val bankNames = balances.map { it.bankName ?: "Unknown Bank" }.distinct()
+                val bankBalances = bankNames.associateWith { bank ->
+                    val accountsForBank = regularAccounts.filter { (it.bankName ?: "Unknown Bank") == bank }
+                    accountsForBank.sumOf { account ->
+                        if (account.currency == selectedCurrency) account.balance
+                        else currencyConversionService.convertAmount(
+                            amount = account.balance,
+                            fromCurrency = account.currency,
+                            toCurrency = selectedCurrency
+                        ) ?: account.balance
+                    }
+                }
+
+                // Preserve existing prefs or initialize defaults
+                val currentHistory = _uiState.value.banksShowHistory
+                val currentBalancePrefs = _uiState.value.banksShowBalance
+                val defaultHistory = if (currentHistory.isEmpty()) bankNames.toSet() else currentHistory
+                val defaultBalance = if (currentBalancePrefs.isEmpty()) bankNames.toSet() else currentBalancePrefs
+
                 _uiState.value = _uiState.value.copy(
                     accountBalances = regularAccounts,  // Only regular bank accounts
                     creditCards = creditCards,           // Only credit cards
                     totalBalance = totalBalanceInSelectedCurrency,
                     totalAvailableCredit = totalAvailableCreditInSelectedCurrency,
-                    availableCurrencies = updatedAvailableCurrencies
+                    availableCurrencies = updatedAvailableCurrencies,
+                    bankBalances = bankBalances,
+                    banksShowHistory = defaultHistory,
+                    banksShowBalance = defaultBalance
                 )
+                // Update per-bank counts when balances change
+                updateBankTransactionCounts()
+            }
+        }
+    }
+
+    private fun updateBankTransactionCounts() {
+        viewModelScope.launch {
+            try {
+                val all = transactionRepository.getAllTransactionsList()
+                val counts = all.groupingBy { it.bankName ?: "Unknown Bank" }.eachCount()
+                _uiState.value = _uiState.value.copy(bankTransactionCounts = counts)
+            } catch (e: Exception) {
+                // Ignore errors for counts
+            }
+        }
+    }
+
+    /**
+     * Select a bank to filter transactions on the Home screen.
+     * Pass null to show all banks.
+     */
+    fun selectBank(bankName: String?) {
+        _uiState.value = _uiState.value.copy(selectedBank = bankName)
+        viewModelScope.launch {
+            // Load recent transactions filtered by bank or global recent
+            if (bankName == null) {
+                val recent = transactionRepository.getRecentTransactions(limit = 20).first()
+                _uiState.value = _uiState.value.copy(recentTransactions = recent)
+            } else {
+                val all = transactionRepository.getAllTransactions().first()
+                val filtered = all.filter { (it.bankName ?: "Unknown Bank") == bankName }
+                _uiState.value = _uiState.value.copy(recentTransactions = filtered.take(20))
+            }
+
+            // Recompute month summaries filtered by bank
+            try {
+                val now = LocalDate.now()
+                val startOfMonth = now.withDayOfMonth(1).atStartOfDay()
+                val endOfMonth = now.atTime(23, 59, 59)
+
+                val monthTransactions = transactionRepository.getTransactionsBetweenDates(startOfMonth, endOfMonth).first()
+                val bankMonthTransactions = if (bankName == null) monthTransactions else monthTransactions.filter { (it.bankName ?: "Unknown Bank") == bankName }
+
+                val income = bankMonthTransactions.filter { it.transactionType == com.pennywiseai.tracker.data.database.entity.TransactionType.INCOME }.fold(BigDecimal.ZERO) { acc, t -> acc + t.amount }
+                val expenses = bankMonthTransactions.filter { it.transactionType == com.pennywiseai.tracker.data.database.entity.TransactionType.EXPENSE }.fold(BigDecimal.ZERO) { acc, t -> acc + t.amount }
+                val total = income - expenses
+
+                // Transaction type totals
+                val creditCardTotal = bankMonthTransactions.filter { it.transactionType == com.pennywiseai.tracker.data.database.entity.TransactionType.CREDIT }.fold(BigDecimal.ZERO) { acc, t -> acc + t.amount }
+                val transferTotal = bankMonthTransactions.filter { it.transactionType == com.pennywiseai.tracker.data.database.entity.TransactionType.TRANSFER }.fold(BigDecimal.ZERO) { acc, t -> acc + t.amount }
+                val investmentTotal = bankMonthTransactions.filter { it.transactionType == com.pennywiseai.tracker.data.database.entity.TransactionType.INVESTMENT }.fold(BigDecimal.ZERO) { acc, t -> acc + t.amount }
+
+                _uiState.value = _uiState.value.copy(
+                    currentMonthTotal = total,
+                    currentMonthIncome = income,
+                    currentMonthExpenses = expenses,
+                    currentMonthCreditCard = creditCardTotal,
+                    currentMonthTransfer = transferTotal,
+                    currentMonthInvestment = investmentTotal
+                )
+
+                // Last month (same period length) breakdown filtered by bank
+                val dayOfMonth = now.dayOfMonth
+                val lastMonth = now.minusMonths(1)
+                val lastMonthStart = lastMonth.withDayOfMonth(1).atStartOfDay()
+                val lastMonthMaxDay = min(dayOfMonth, lastMonth.lengthOfMonth())
+                val lastMonthEnd = lastMonth.withDayOfMonth(lastMonthMaxDay).atTime(23, 59, 59)
+
+                val lastTransactions = transactionRepository.getTransactionsBetweenDates(lastMonthStart, lastMonthEnd).first()
+                val bankLastTransactions = if (bankName == null) lastTransactions else lastTransactions.filter { (it.bankName ?: "Unknown Bank") == bankName }
+
+                val lastIncome = bankLastTransactions.filter { it.transactionType == com.pennywiseai.tracker.data.database.entity.TransactionType.INCOME }.fold(BigDecimal.ZERO) { acc, t -> acc + t.amount }
+                val lastExpenses = bankLastTransactions.filter { it.transactionType == com.pennywiseai.tracker.data.database.entity.TransactionType.EXPENSE }.fold(BigDecimal.ZERO) { acc, t -> acc + t.amount }
+                val lastTotal = lastIncome - lastExpenses
+
+                _uiState.value = _uiState.value.copy(
+                    lastMonthTotal = lastTotal,
+                    lastMonthIncome = lastIncome,
+                    lastMonthExpenses = lastExpenses
+                )
+            } catch (e: Exception) {
+                // ignore failures
             }
         }
     }
@@ -382,7 +514,25 @@ class HomeViewModel @Inject constructor(
     fun hideBreakdownDialog() {
         _uiState.value = _uiState.value.copy(showBreakdownDialog = false)
     }
-    
+
+    /**
+     * Toggle whether transactions for a bank are shown in the Recent Transactions list
+     */
+    fun toggleBankHistory(bankName: String) {
+        val current = _uiState.value.banksShowHistory.toMutableSet()
+        if (current.contains(bankName)) current.remove(bankName) else current.add(bankName)
+        _uiState.value = _uiState.value.copy(banksShowHistory = current)
+    }
+
+    /**
+     * Toggle whether the bank's balance is shown in the bank balances row
+     */
+    fun toggleBankBalance(bankName: String) {
+        val current = _uiState.value.banksShowBalance.toMutableSet()
+        if (current.contains(bankName)) current.remove(bankName) else current.add(bankName)
+        _uiState.value = _uiState.value.copy(banksShowBalance = current)
+    }
+
     /**
      * Checks for app updates using Google Play In-App Updates.
      * Should be called with the current activity context.
@@ -569,5 +719,15 @@ data class HomeUiState(
     val availableCurrencies: List<String> = emptyList(),
     val isLoading: Boolean = true,
     val isScanning: Boolean = false,
-    val showBreakdownDialog: Boolean = false
+    val showBreakdownDialog: Boolean = false,
+
+    // New fields for per-bank visibility and balances
+    val bankBalances: Map<String, BigDecimal> = emptyMap(),
+    val banksShowHistory: Set<String> = emptySet(),
+    val banksShowBalance: Set<String> = emptySet()
+    ,
+    // Selected bank filter (null = All)
+    val selectedBank: String? = null,
+    // Per-bank transaction counts used for badges in the UI
+    val bankTransactionCounts: Map<String, Int> = emptyMap()
 )

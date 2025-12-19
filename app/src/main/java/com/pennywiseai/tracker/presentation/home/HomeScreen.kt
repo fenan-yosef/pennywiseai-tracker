@@ -183,13 +183,26 @@ fun HomeScreen(
                     onCurrencySelected = { viewModel.selectCurrency(it) }
                 )
             }
+
+            // Bank tabs - show list of banks (All + per-bank)
+            item {
+                val banks = uiState.bankBalances.keys.sorted().toList()
+                if (banks.isNotEmpty()) {
+                    BankTabs(
+                        banks = banks,
+                        selectedBank = uiState.selectedBank,
+                        counts = uiState.bankTransactionCounts,
+                        onSelect = { viewModel.selectBank(it) }
+                    )
+                }
+            }
             
             // Unified Accounts Section (Credit Cards + Bank Accounts)
             if (uiState.creditCards.isNotEmpty() || uiState.accountBalances.isNotEmpty()) {
                 item {
                     UnifiedAccountsCard(
-                        creditCards = uiState.creditCards,
-                        bankAccounts = uiState.accountBalances,
+                        creditCards = if (uiState.selectedBank == null) uiState.creditCards else uiState.creditCards.filter { it.bankName == uiState.selectedBank },
+                        bankAccounts = if (uiState.selectedBank == null) uiState.accountBalances else uiState.accountBalances.filter { it.bankName == uiState.selectedBank },
                         totalBalance = uiState.totalBalance,
                         totalAvailableCredit = uiState.totalAvailableCredit,
                         selectedCurrency = uiState.selectedCurrency,
@@ -203,14 +216,102 @@ fun HomeScreen(
                         }
                     )
                 }
+
+                // New: Per-bank toggles and bank balance row
+                item {
+                    // Horizontal row with bank balances (visibility controlled) and two switches per bank
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            text = "Banks",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.padding(bottom = Spacing.xs)
+                        )
+
+                        // Bank balances row
+                                    LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+                        ) {
+                                        val bankEntries = if (uiState.selectedBank == null) uiState.bankBalances.entries.toList() else uiState.bankBalances.entries.filter { it.key == uiState.selectedBank }
+                                        items(bankEntries) { (bankName, balance) ->
+                                val showBalance = uiState.banksShowBalance.contains(bankName)
+                                Card(
+                                    modifier = Modifier.height(72.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                                    )
+                                ) {
+                                    Column(
+                                        modifier = Modifier
+                                            .padding(Dimensions.Padding.content)
+                                            .widthIn(min = 120.dp),
+                                        verticalArrangement = Arrangement.Center
+                                    ) {
+                                        Text(
+                                            text = bankName,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            maxLines = 1
+                                        )
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(
+                                            text = if (showBalance) CurrencyFormatter.formatCurrency(balance, uiState.selectedCurrency) else "Hidden",
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(Spacing.sm))
+
+                        // Bank toggles: Show History / Show Balance
+                        Column(verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                            val bankKeys = if (uiState.selectedBank == null) uiState.bankBalances.keys else uiState.bankBalances.keys.filter { it == uiState.selectedBank }
+                            bankKeys.forEach { bankName ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column {
+                                        Text(text = bankName, style = MaterialTheme.typography.bodyLarge)
+                                        Text(text = "Show history and balance for this bank", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        // Show History Switch
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                            Text(text = "History", style = MaterialTheme.typography.labelSmall)
+                                            Switch(
+                                                checked = uiState.banksShowHistory.contains(bankName),
+                                                onCheckedChange = { viewModel.toggleBankHistory(bankName) }
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        // Show Balance Switch
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                            Text(text = "Balance", style = MaterialTheme.typography.labelSmall)
+                                            Switch(
+                                                checked = uiState.banksShowBalance.contains(bankName),
+                                                onCheckedChange = { viewModel.toggleBankBalance(bankName) }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
             
             // Upcoming Subscriptions Alert
-            if (uiState.upcomingSubscriptions.isNotEmpty()) {
+            val subsToShow = if (uiState.selectedBank == null) uiState.upcomingSubscriptions else uiState.upcomingSubscriptions.filter { it.bankName == uiState.selectedBank }
+            val subsTotal = subsToShow.sumOf { it.amount }
+            if (subsToShow.isNotEmpty()) {
                 item {
                     UpcomingSubscriptionsCard(
-                        subscriptions = uiState.upcomingSubscriptions,
-                        totalAmount = uiState.upcomingSubscriptionsTotal,
+                        subscriptions = subsToShow,
+                        totalAmount = subsTotal,
                         onClick = onNavigateToSubscriptions
                     )
                 }
@@ -277,14 +378,29 @@ fun HomeScreen(
                     }
                 }
             } else {
-                items(
-                    items = uiState.recentTransactions,
-                    key = { it.id }
-                ) { transaction ->
-                    SimpleTransactionItem(
-                        transaction = transaction,
-                        onClick = { onTransactionClick(transaction.id) }
-                    )
+                // Apply bank tab filter (null = All)
+                val filteredTransactions = uiState.recentTransactions.filter { tx ->
+                    uiState.selectedBank == null || (tx.bankName ?: "Unknown Bank") == uiState.selectedBank
+                }
+                // Group recent transactions by bank to show them separately
+                val groupedByBank = filteredTransactions.groupBy { it.bankName ?: "Unknown Bank" }
+                groupedByBank.forEach { (bank, transactions) ->
+                    // Respect the per-bank 'show history' setting
+                    val showHistory = uiState.banksShowHistory.contains(bank)
+                    if (showHistory) {
+                        item {
+                            SectionHeader(title = bank)
+                        }
+                        items(
+                            items = transactions,
+                            key = { it.id }
+                        ) { transaction ->
+                            SimpleTransactionItem(
+                                transaction = transaction,
+                                onClick = { onTransactionClick(transaction.id) }
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -407,6 +523,80 @@ fun HomeScreen(
     }
 }
 
+@Composable
+private fun BankTabs(
+    banks: List<String>,
+    selectedBank: String?,
+    counts: Map<String, Int>,
+    onSelect: (String?) -> Unit
+) {
+    val tabs = listOf("All") + banks
+    val selectedIndex = (selectedBank?.let { tabs.indexOf(it) } ?: 0).coerceAtLeast(0)
+
+    androidx.compose.material3.ScrollableTabRow(
+        selectedTabIndex = selectedIndex,
+        edgePadding = 8.dp
+    ) {
+        tabs.forEachIndexed { index, title ->
+            val isSelected = index == selectedIndex
+            Tab(
+                selected = isSelected,
+                onClick = { onSelect(if (index == 0) null else title) }
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Small circular icon with initials for banks (All shows a globe-like marker)
+                    Surface(
+                        shape = RoundedCornerShape(50),
+                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(
+                                text = if (index == 0) "*" else (title.take(2).uppercase()),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    // Badge / count
+                    val count = when {
+                        index == 0 -> counts.values.sum()
+                        else -> counts[title] ?: 0
+                    }
+                    if (count > 0) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.height(20.dp)
+                        ) {
+                            Box(modifier = Modifier.padding(horizontal = 6.dp), contentAlignment = Alignment.Center) {
+                                Text(
+                                    text = count.toString(),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onPrimary
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SimpleTransactionItem(
@@ -498,7 +688,7 @@ private fun MonthSummaryCard(
         "USD" to "$",
         "AED" to "AED",
         "NPR" to "₨",
-        "ETB" to "ብর"
+        "ETB" to "ብر"
     )
     val currencySymbol = currencySymbols[currency] ?: currency
 
