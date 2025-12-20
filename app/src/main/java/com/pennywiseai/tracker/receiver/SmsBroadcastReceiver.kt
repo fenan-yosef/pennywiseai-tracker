@@ -106,7 +106,7 @@ class SmsBroadcastReceiver : BroadcastReceiver() {
                     // Show notification if app is not in foreground
                     if (!isAppInForeground(context)) {
                         // Get transaction details for notification
-                        val parser = com.pennywiseai.parser.core.bank.BankParserFactory.getParser(sender)
+                        val parser = com.pennywiseai.parser.core.bank.BankParserFactory.getParser(sender, body)
                         val parsedTransaction = parser?.parse(body, sender, timestamp)
 
                         if (parsedTransaction != null) {

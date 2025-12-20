@@ -95,8 +95,8 @@ class SmsReaderWorker @AssistedInject constructor(
                     continue
                 }
                 
-                // Check if sender is from a known bank
-                val parser = BankParserFactory.getParser(sms.sender)
+                // Check if sender is from a known bank (fallback to message body when needed)
+                val parser = BankParserFactory.getParser(sms.sender, sms.body)
                 if (parser != null) {
                     Log.d(TAG, "Processing SMS from ${parser.getBankName()}")
                     

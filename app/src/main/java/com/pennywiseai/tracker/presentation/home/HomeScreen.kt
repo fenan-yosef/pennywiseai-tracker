@@ -203,7 +203,7 @@ fun HomeScreen(
                     UnifiedAccountsCard(
                         creditCards = if (uiState.selectedBank == null) uiState.creditCards else uiState.creditCards.filter { it.bankName == uiState.selectedBank },
                         bankAccounts = if (uiState.selectedBank == null) uiState.accountBalances else uiState.accountBalances.filter { it.bankName == uiState.selectedBank },
-                        totalBalance = uiState.totalBalance,
+                        totalBalance = if (uiState.selectedBank == null) uiState.totalBalance else (uiState.bankBalances[uiState.selectedBank] ?: java.math.BigDecimal.ZERO),
                         totalAvailableCredit = uiState.totalAvailableCredit,
                         selectedCurrency = uiState.selectedCurrency,
                         onAccountClick = { bankName, accountLast4 ->
@@ -638,6 +638,7 @@ private fun MonthSummaryCard(
     currency: String,
     currentExpenses: BigDecimal = BigDecimal.ZERO,
     lastExpenses: BigDecimal = BigDecimal.ZERO,
+    titlePrefix: String = "Net Balance",
     onShowBreakdown: () -> Unit = {}
 ) {
     val isPositive = monthTotal >= BigDecimal.ZERO
@@ -692,7 +693,7 @@ private fun MonthSummaryCard(
     )
     val currencySymbol = currencySymbols[currency] ?: currency
 
-    val titleText = "Net Balance ($currencySymbol) • $currentMonth 1-${now.dayOfMonth}"
+    val titleText = "$titlePrefix ($currencySymbol) • $currentMonth 1-${now.dayOfMonth}"
     
     SummaryCard(
         title = titleText,
@@ -1029,14 +1030,18 @@ private fun TransactionSummaryCards(
         ) { page ->
             when (page) {
                 0 -> {
-                    // Net Balance Card (existing implementation)
+                    // Net Balance Card (existing implementation) — show per-bank balance when a bank is selected
+                    val isBankSelected = uiState.selectedBank != null
+                    val bankBalance = if (isBankSelected) uiState.bankBalances[uiState.selectedBank] ?: BigDecimal.ZERO else BigDecimal.ZERO
+
                     MonthSummaryCard(
-                        monthTotal = uiState.currentMonthTotal,
-                        monthlyChange = uiState.monthlyChange,
-                        monthlyChangePercent = uiState.monthlyChangePercent,
+                        monthTotal = if (isBankSelected) bankBalance else uiState.totalBalance,
+                        monthlyChange = if (isBankSelected) BigDecimal.ZERO else uiState.monthlyChange,
+                        monthlyChangePercent = if (isBankSelected) 0 else uiState.monthlyChangePercent,
                         currency = uiState.selectedCurrency,
-                        currentExpenses = uiState.currentMonthExpenses,
-                        lastExpenses = uiState.lastMonthExpenses,
+                        currentExpenses = if (isBankSelected) BigDecimal.ZERO else uiState.currentMonthExpenses,
+                        lastExpenses = if (isBankSelected) BigDecimal.ZERO else uiState.lastMonthExpenses,
+                        titlePrefix = "Bank Balance",
                         onShowBreakdown = { /* TODO */ }
                     )
                 }

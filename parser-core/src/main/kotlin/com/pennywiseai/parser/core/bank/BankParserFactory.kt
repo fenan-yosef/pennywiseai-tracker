@@ -53,6 +53,7 @@ object BankParserFactory {
         OldHickoryParser(),  // Old Hickory Credit Union (USA)
         LaxmiBankParser(),  // Laxmi Sunrise Bank (Nepal)
         CBEBankParser(),  // Commercial Bank of Ethiopia
+        BunaBankParser(), // Buna Bank (Ethiopia)
         BankOfAbyssiniaParser(), // Bank of Abyssinia (Ethiopia)
         EverestBankParser(),  // Everest Bank (Nepal)
         BancolombiaParser(),  // Bancolombia (Colombia)
@@ -76,6 +77,35 @@ object BankParserFactory {
      */
     fun getParser(sender: String): BankParser? {
         return parsers.firstOrNull { it.canHandle(sender) }
+    }
+
+    /**
+     * Try to get a parser using the sender first; if none found and a message body
+     * is provided, attempt a fallback by matching the bank name in the message body.
+     */
+    fun getParser(sender: String, messageBody: String?): BankParser? {
+        // Prefer matching by sender
+        val bySender = getParser(sender)
+        if (bySender != null) return bySender
+
+        // If sender didn't match, try matching by message body content
+        if (!messageBody.isNullOrBlank()) {
+            // 1) Parser-specific body detection
+            parsers.forEach { parser ->
+                try {
+                    if (parser.canHandleBody(messageBody)) return parser
+                } catch (_: Exception) {
+                }
+            }
+            // 2) Fallback: naive match of bank name within body
+            val upperBody = messageBody.uppercase()
+            parsers.forEach { parser ->
+                val bankNameUpper = parser.getBankName().uppercase()
+                if (upperBody.contains(bankNameUpper)) return parser
+            }
+        }
+
+        return null
     }
 
     /**

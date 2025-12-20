@@ -64,8 +64,8 @@ class SmsTransactionProcessor @Inject constructor(
         timestamp: Long
     ): ProcessingResult {
         try {
-            // Get the appropriate parser for this sender
-            val parser = BankParserFactory.getParser(sender)
+            // Get the appropriate parser for this sender (fallback to message body)
+            val parser = BankParserFactory.getParser(sender, body)
             if (parser == null) {
                 return ProcessingResult(false, reason = "No parser found for sender: $sender")
             }

@@ -291,4 +291,26 @@ class TransactionRepository @Inject constructor(
             transaction.category.isNullOrBlank() || transaction.category == "Others"
         }
     }
+
+    /**
+     * Fast aggregation: transaction counts per bank.
+     */
+    suspend fun getTransactionCountsByBank(): Map<String, Int> {
+        val raw = transactionDao.getTransactionCountsByBank()
+        return raw.associate { (bankName, count) -> (bankName ?: "Unknown Bank") to count }
+    }
+
+    /**
+     * Fast aggregation: per-bank monthly totals (income & expenses).
+     * Returns a map from bankName -> MonthlyBreakdown
+     */
+    suspend fun getMonthlyTotalsByBank(startDate: LocalDateTime, endDate: LocalDateTime): Map<String, MonthlyBreakdown> {
+        val raw = transactionDao.getMonthlyTotalsByBank(startDate, endDate)
+        return raw.associate { dto ->
+            val income = dto.income ?: BigDecimal.ZERO
+            val expenses = dto.expenses ?: BigDecimal.ZERO
+            val total = income - expenses
+            (dto.bankName ?: "Unknown Bank") to MonthlyBreakdown(total = total, income = income, expenses = expenses)
+        }
+    }
 }

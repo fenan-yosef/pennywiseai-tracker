@@ -419,8 +419,7 @@ class HomeViewModel @Inject constructor(
     private fun updateBankTransactionCounts() {
         viewModelScope.launch {
             try {
-                val all = transactionRepository.getAllTransactionsList()
-                val counts = all.groupingBy { it.bankName ?: "Unknown Bank" }.eachCount()
+                val counts = transactionRepository.getTransactionCountsByBank()
                 _uiState.value = _uiState.value.copy(bankTransactionCounts = counts)
             } catch (e: Exception) {
                 // Ignore errors for counts
@@ -451,26 +450,38 @@ class HomeViewModel @Inject constructor(
                 val startOfMonth = now.withDayOfMonth(1).atStartOfDay()
                 val endOfMonth = now.atTime(23, 59, 59)
 
-                val monthTransactions = transactionRepository.getTransactionsBetweenDates(startOfMonth, endOfMonth).first()
-                val bankMonthTransactions = if (bankName == null) monthTransactions else monthTransactions.filter { (it.bankName ?: "Unknown Bank") == bankName }
+                if (bankName == null) {
+                    val monthTransactions = transactionRepository.getTransactionsBetweenDates(startOfMonth, endOfMonth).first()
+                    val income = monthTransactions.filter { it.transactionType == com.pennywiseai.tracker.data.database.entity.TransactionType.INCOME }.fold(BigDecimal.ZERO) { acc, t -> acc + t.amount }
+                    val expenses = monthTransactions.filter { it.transactionType == com.pennywiseai.tracker.data.database.entity.TransactionType.EXPENSE }.fold(BigDecimal.ZERO) { acc, t -> acc + t.amount }
+                    val total = income - expenses
 
-                val income = bankMonthTransactions.filter { it.transactionType == com.pennywiseai.tracker.data.database.entity.TransactionType.INCOME }.fold(BigDecimal.ZERO) { acc, t -> acc + t.amount }
-                val expenses = bankMonthTransactions.filter { it.transactionType == com.pennywiseai.tracker.data.database.entity.TransactionType.EXPENSE }.fold(BigDecimal.ZERO) { acc, t -> acc + t.amount }
-                val total = income - expenses
+                    // Transaction type totals
+                    val creditCardTotal = monthTransactions.filter { it.transactionType == com.pennywiseai.tracker.data.database.entity.TransactionType.CREDIT }.fold(BigDecimal.ZERO) { acc, t -> acc + t.amount }
+                    val transferTotal = monthTransactions.filter { it.transactionType == com.pennywiseai.tracker.data.database.entity.TransactionType.TRANSFER }.fold(BigDecimal.ZERO) { acc, t -> acc + t.amount }
+                    val investmentTotal = monthTransactions.filter { it.transactionType == com.pennywiseai.tracker.data.database.entity.TransactionType.INVESTMENT }.fold(BigDecimal.ZERO) { acc, t -> acc + t.amount }
 
-                // Transaction type totals
-                val creditCardTotal = bankMonthTransactions.filter { it.transactionType == com.pennywiseai.tracker.data.database.entity.TransactionType.CREDIT }.fold(BigDecimal.ZERO) { acc, t -> acc + t.amount }
-                val transferTotal = bankMonthTransactions.filter { it.transactionType == com.pennywiseai.tracker.data.database.entity.TransactionType.TRANSFER }.fold(BigDecimal.ZERO) { acc, t -> acc + t.amount }
-                val investmentTotal = bankMonthTransactions.filter { it.transactionType == com.pennywiseai.tracker.data.database.entity.TransactionType.INVESTMENT }.fold(BigDecimal.ZERO) { acc, t -> acc + t.amount }
-
-                _uiState.value = _uiState.value.copy(
-                    currentMonthTotal = total,
-                    currentMonthIncome = income,
-                    currentMonthExpenses = expenses,
-                    currentMonthCreditCard = creditCardTotal,
-                    currentMonthTransfer = transferTotal,
-                    currentMonthInvestment = investmentTotal
-                )
+                    _uiState.value = _uiState.value.copy(
+                        currentMonthTotal = total,
+                        currentMonthIncome = income,
+                        currentMonthExpenses = expenses,
+                        currentMonthCreditCard = creditCardTotal,
+                        currentMonthTransfer = transferTotal,
+                        currentMonthInvestment = investmentTotal
+                    )
+                } else {
+                    // Use fast per-bank aggregation for current month
+                    val monthlyMap = transactionRepository.getMonthlyTotalsByBank(startOfMonth, endOfMonth)
+                    val breakdown = monthlyMap[bankName] ?: TransactionRepository.MonthlyBreakdown(BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO)
+                    _uiState.value = _uiState.value.copy(
+                        currentMonthTotal = breakdown.total,
+                        currentMonthIncome = breakdown.income,
+                        currentMonthExpenses = breakdown.expenses,
+                        currentMonthCreditCard = BigDecimal.ZERO,
+                        currentMonthTransfer = BigDecimal.ZERO,
+                        currentMonthInvestment = BigDecimal.ZERO
+                    )
+                }
 
                 // Last month (same period length) breakdown filtered by bank
                 val dayOfMonth = now.dayOfMonth
@@ -479,18 +490,26 @@ class HomeViewModel @Inject constructor(
                 val lastMonthMaxDay = min(dayOfMonth, lastMonth.lengthOfMonth())
                 val lastMonthEnd = lastMonth.withDayOfMonth(lastMonthMaxDay).atTime(23, 59, 59)
 
-                val lastTransactions = transactionRepository.getTransactionsBetweenDates(lastMonthStart, lastMonthEnd).first()
-                val bankLastTransactions = if (bankName == null) lastTransactions else lastTransactions.filter { (it.bankName ?: "Unknown Bank") == bankName }
+                if (bankName == null) {
+                    val lastTransactions = transactionRepository.getTransactionsBetweenDates(lastMonthStart, lastMonthEnd).first()
+                    val lastIncome = lastTransactions.filter { it.transactionType == com.pennywiseai.tracker.data.database.entity.TransactionType.INCOME }.fold(BigDecimal.ZERO) { acc, t -> acc + t.amount }
+                    val lastExpenses = lastTransactions.filter { it.transactionType == com.pennywiseai.tracker.data.database.entity.TransactionType.EXPENSE }.fold(BigDecimal.ZERO) { acc, t -> acc + t.amount }
+                    val lastTotal = lastIncome - lastExpenses
 
-                val lastIncome = bankLastTransactions.filter { it.transactionType == com.pennywiseai.tracker.data.database.entity.TransactionType.INCOME }.fold(BigDecimal.ZERO) { acc, t -> acc + t.amount }
-                val lastExpenses = bankLastTransactions.filter { it.transactionType == com.pennywiseai.tracker.data.database.entity.TransactionType.EXPENSE }.fold(BigDecimal.ZERO) { acc, t -> acc + t.amount }
-                val lastTotal = lastIncome - lastExpenses
-
-                _uiState.value = _uiState.value.copy(
-                    lastMonthTotal = lastTotal,
-                    lastMonthIncome = lastIncome,
-                    lastMonthExpenses = lastExpenses
-                )
+                    _uiState.value = _uiState.value.copy(
+                        lastMonthTotal = lastTotal,
+                        lastMonthIncome = lastIncome,
+                        lastMonthExpenses = lastExpenses
+                    )
+                } else {
+                    val lastMonthlyMap = transactionRepository.getMonthlyTotalsByBank(lastMonthStart, lastMonthEnd)
+                    val lastBreakdown = lastMonthlyMap[bankName] ?: TransactionRepository.MonthlyBreakdown(BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO)
+                    _uiState.value = _uiState.value.copy(
+                        lastMonthTotal = lastBreakdown.total,
+                        lastMonthIncome = lastBreakdown.income,
+                        lastMonthExpenses = lastBreakdown.expenses
+                    )
+                }
             } catch (e: Exception) {
                 // ignore failures
             }

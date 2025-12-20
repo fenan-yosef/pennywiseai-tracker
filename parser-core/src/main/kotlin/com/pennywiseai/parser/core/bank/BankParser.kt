@@ -23,6 +23,12 @@ abstract class BankParser {
     abstract fun canHandle(sender: String): Boolean
 
     /**
+     * Optional body-based detection when sender is ambiguous or numeric.
+     * Default returns false; bank parsers may override.
+     */
+    open fun canHandleBody(message: String): Boolean = false
+
+    /**
      * Returns the currency used by this bank.
      * Defaults to INR for Indian banks. International banks should override this.
      */

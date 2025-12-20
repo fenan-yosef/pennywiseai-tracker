@@ -22,6 +22,19 @@ class BankOfAbyssiniaParser : BankParser() {
                 s.contains("BANK OF ABY")
     }
 
+    override fun canHandleBody(message: String): Boolean {
+        val lower = message.lowercase()
+        // BOA often includes CS links or the toll-free number 8397
+        return lower.contains("bankofabyssinia.com") ||
+                lower.contains("cs.bankofabyssinia.com") ||
+                lower.contains("receipt:") && lower.contains("trx=") ||
+                lower.contains("call 8397") ||
+                (
+                    (lower.contains("your account") && lower.contains("etb")) &&
+                            (lower.contains("credited") || lower.contains("debited"))
+                )
+    }
+
     override fun extractAmount(message: String): BigDecimal? {
         val patterns = listOf(
             Regex("""ETB\s*([0-9,]+(?:\.[0-9]{2})?)""", RegexOption.IGNORE_CASE),

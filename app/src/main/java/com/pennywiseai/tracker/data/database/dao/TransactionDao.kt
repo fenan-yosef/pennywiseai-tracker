@@ -155,6 +155,44 @@ interface TransactionDao {
         startDate: LocalDateTime,
         endDate: LocalDateTime
     ): List<TransactionEntity>
+
+    // Lightweight DTO for counts per bank
+    data class BankTransactionCount(
+        @ColumnInfo(name = "bank_name") val bankName: String?,
+        @ColumnInfo(name = "count") val count: Int
+    )
+
+    // Return number of transactions grouped by bank name (fast SQL aggregation)
+    @Query("""
+        SELECT bank_name, COUNT(*) as count
+        FROM transactions
+        WHERE is_deleted = 0
+        GROUP BY bank_name
+    """)
+    suspend fun getTransactionCountsByBank(): List<BankTransactionCount>
+
+    // DTO for per-bank monthly totals
+    data class BankMonthlyTotals(
+        @ColumnInfo(name = "bank_name") val bankName: String?,
+        @ColumnInfo(name = "income") val income: java.math.BigDecimal?,
+        @ColumnInfo(name = "expenses") val expenses: java.math.BigDecimal?
+    )
+
+    // Return per-bank income/expenses sums for a given date range
+    @Query("""
+        SELECT
+            bank_name,
+            SUM(CASE WHEN transaction_type = 'INCOME' THEN amount ELSE 0 END) as income,
+            SUM(CASE WHEN transaction_type = 'EXPENSE' THEN amount ELSE 0 END) as expenses
+        FROM transactions
+        WHERE is_deleted = 0
+        AND date_time BETWEEN :startDate AND :endDate
+        GROUP BY bank_name
+    """)
+    suspend fun getMonthlyTotalsByBank(
+        startDate: LocalDateTime,
+        endDate: LocalDateTime
+    ): List<BankMonthlyTotals>
     
     @Query("""
         SELECT * FROM transactions

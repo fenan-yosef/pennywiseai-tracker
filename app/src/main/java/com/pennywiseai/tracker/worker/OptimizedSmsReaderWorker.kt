@@ -295,7 +295,7 @@ class OptimizedSmsReaderWorker @AssistedInject constructor(
                         continue
                     }
 
-                    val parser = BankParserFactory.getParser(sms.sender)
+                    val parser = BankParserFactory.getParser(sms.sender, sms.body)
                     if (parser != null) {
                         Log.d(
                             TAG,
@@ -545,7 +545,7 @@ private suspend fun processMessageChunk(
             }
 
             // Check if sender is from a known bank
-            val parser = BankParserFactory.getParser(sms.sender)
+                        val parser = BankParserFactory.getParser(sms.sender, sms.body)
             if (parser != null) {
                 Log.d(TAG, "Processing SMS from ${parser.getBankName()}")
                 // Calculate SMS age for subscription filtering
@@ -646,7 +646,7 @@ private suspend fun processBatchCoroutinesDirect(
                     continue
                 }
 
-                val parser = BankParserFactory.getParser(sms.sender)
+                val parser = BankParserFactory.getParser(sms.sender, sms.body)
                 if (parser != null) {
                     Log.d(TAG, "Processing SMS from ${parser.getBankName()}")
                     // Check if this is a subscription notification first
