@@ -632,10 +632,7 @@ private fun AnalyticsTrendsCard(
             }
 
             if (monthlyTrend.size >= 2) {
-                val weeks = remember(monthlyTrend) {
-                    val weekCount = (monthlyTrend.size + 6) / 7
-                    (1..weekCount).map { "W$it" }
-                }
+                val weeks = remember(monthlyTrend) { monthlyTrend.map { it.label } }
                 TrendSection(
                     title = "Monthly",
                     points = monthlyTrend,

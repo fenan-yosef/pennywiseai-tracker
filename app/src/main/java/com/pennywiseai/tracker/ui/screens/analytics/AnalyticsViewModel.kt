@@ -356,7 +356,7 @@ class AnalyticsViewModel @Inject constructor(
         return (0..6).map { offset ->
             val date = start.plusDays(offset.toLong())
             TrendPoint(
-                label = date.dayOfWeek.name.take(3),
+                label = date.dayOfWeek.name.take(3).lowercase().replaceFirstChar { it.uppercase() },
                 amount = totalsByDate[date] ?: BigDecimal.ZERO
             )
         }
@@ -382,7 +382,7 @@ class AnalyticsViewModel @Inject constructor(
                 val d = start.plusDays(off.toLong())
                 acc + (totalsByDate[d] ?: BigDecimal.ZERO)
             }
-            TrendPoint(label = "W${idx + 1}", amount = total)
+            TrendPoint(label = "Week ${idx + 1}", amount = total)
         }
     }
 }
