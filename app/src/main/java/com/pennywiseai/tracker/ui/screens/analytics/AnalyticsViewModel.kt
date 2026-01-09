@@ -11,8 +11,11 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.math.BigDecimal
+import java.math.RoundingMode
 import java.time.LocalDate
 import java.time.YearMonth
+import java.time.temporal.ChronoUnit
+import kotlin.math.max
 import javax.inject.Inject
 
 @HiltViewModel
@@ -26,6 +29,9 @@ class AnalyticsViewModel @Inject constructor(
     
     private val _transactionTypeFilter = MutableStateFlow(TransactionTypeFilter.EXPENSE)
     val transactionTypeFilter: StateFlow<TransactionTypeFilter> = _transactionTypeFilter.asStateFlow()
+
+    private val _selectedBank = MutableStateFlow<String?>(null)
+    val selectedBank: StateFlow<String?> = _selectedBank.asStateFlow()
 
     private val _selectedCurrency = MutableStateFlow("INR") // Default to INR
     val selectedCurrency: StateFlow<String> = _selectedCurrency.asStateFlow()
@@ -56,10 +62,11 @@ class AnalyticsViewModel @Inject constructor(
         _selectedPeriod,
         customDateRange,
         _transactionTypeFilter,
-        _selectedCurrency
-    ) { period, customRange, typeFilter, currency ->
+        _selectedCurrency,
+        _selectedBank
+    ) { period, customRange, typeFilter, currency, bank ->
         // Combine all filter states
-        FilterState(period, customRange, typeFilter, currency)
+        FilterState(period, customRange, typeFilter, currency, bank)
     }.flatMapLatest { filterState ->
         // Determine date range based on selected period
         val dateRange = if (filterState.period == TimePeriod.CUSTOM) {
@@ -119,11 +126,27 @@ class AnalyticsViewModel @Inject constructor(
                 )
             }.map { filteredTransactions ->
 
+                val bankCounts = filteredTransactions
+                    .groupBy { it.bankName ?: "Unknown Bank" }
+                    .mapValues { it.value.size }
+
+                val availableBanks = bankCounts.keys.sorted()
+
+                // Ensure selected bank is valid; if not, reset to null (All)
+                val effectiveSelectedBank = filterState.bank?.takeIf { availableBanks.contains(it) }
+                if (effectiveSelectedBank != filterState.bank) {
+                    _selectedBank.value = effectiveSelectedBank
+                }
+
+                val bankFilteredTransactions = effectiveSelectedBank?.let { bank ->
+                    filteredTransactions.filter { (it.bankName ?: "Unknown Bank") == bank }
+                } ?: filteredTransactions
+
                 // Calculate total
-                val totalSpending = filteredTransactions.sumOf { it.amount.toDouble() }.toBigDecimal()
+                val totalSpending = bankFilteredTransactions.sumOf { it.amount.toDouble() }.toBigDecimal()
 
                 // Group by category
-                val categoryBreakdown = filteredTransactions
+                val categoryBreakdown = bankFilteredTransactions
                     .groupBy { it.category ?: "Others" }
                     .map { (categoryName, txns) ->
                         val categoryTotal = txns.sumOf { it.amount.toDouble() }.toBigDecimal()
@@ -139,7 +162,7 @@ class AnalyticsViewModel @Inject constructor(
                     .sortedByDescending { it.amount }
 
                 // Group by merchant
-                val merchantBreakdown = filteredTransactions
+                val merchantBreakdown = bankFilteredTransactions
                     .groupBy { it.merchantName }
                     .mapValues { (merchant, txns) ->
                         MerchantData(
@@ -154,8 +177,8 @@ class AnalyticsViewModel @Inject constructor(
                     .take(10) // Top 10 merchants
 
                 // Calculate average amount
-                val averageAmount = if (filteredTransactions.isNotEmpty()) {
-                    totalSpending.divide(BigDecimal(filteredTransactions.size), 2, java.math.RoundingMode.HALF_UP)
+                val averageAmount = if (bankFilteredTransactions.isNotEmpty()) {
+                    totalSpending.divide(BigDecimal(bankFilteredTransactions.size), 2, java.math.RoundingMode.HALF_UP)
                 } else {
                     BigDecimal.ZERO
                 }
@@ -163,16 +186,42 @@ class AnalyticsViewModel @Inject constructor(
                 // Get top category info
                 val topCategory = categoryBreakdown.firstOrNull()
 
+                val insights = calculateInsights(bankFilteredTransactions)
+
+                val weeklyTrend = buildLast7DailyTrendSeries(
+                    transactions = bankFilteredTransactions,
+                    endInclusive = dateRange.second
+                )
+
+                val monthlyStart = run {
+                    val daysInRange = ChronoUnit.DAYS.between(dateRange.first, dateRange.second).toInt().coerceAtLeast(0) + 1
+                    if (daysInRange <= 31) {
+                        dateRange.first
+                    } else {
+                        dateRange.second.minusDays(29)
+                    }
+                }
+                val monthlyTrend = buildLast4WeeklyTrendSeries(
+                    transactions = bankFilteredTransactions,
+                    endInclusive = dateRange.second
+                )
+
                 AnalyticsUiState(
                     totalSpending = totalSpending,
                     categoryBreakdown = categoryBreakdown,
                     topMerchants = merchantBreakdown,
-                    transactionCount = filteredTransactions.size,
+                    transactionCount = bankFilteredTransactions.size,
                     averageAmount = averageAmount,
                     topCategory = topCategory?.name,
                     topCategoryPercentage = topCategory?.percentage ?: 0f,
                     currency = filterState.currency,
-                    isLoading = false
+                    isLoading = false,
+                    insights = insights,
+                    weeklyTrend = weeklyTrend,
+                    monthlyTrend = monthlyTrend,
+                    banks = availableBanks,
+                    selectedBank = effectiveSelectedBank,
+                    bankTransactionCounts = bankCounts
                 )
             }
         }
@@ -192,6 +241,10 @@ class AnalyticsViewModel @Inject constructor(
 
     fun selectCurrency(currency: String) {
         _selectedCurrency.value = currency
+    }
+
+    fun selectBank(bank: String?) {
+        _selectedBank.value = bank
     }
 
     /**
@@ -222,6 +275,116 @@ class AnalyticsViewModel @Inject constructor(
             _selectedPeriod.value = TimePeriod.THIS_MONTH
         }
     }
+
+    private fun calculateInsights(transactions: List<com.pennywiseai.tracker.data.database.entity.TransactionEntity>): AnalyticsInsights {
+        if (transactions.isEmpty()) return AnalyticsInsights()
+
+        val totalCount = transactions.size
+        val totalAmount = transactions.sumOf { it.amount.toDouble() }.toBigDecimal()
+        val avgAmount = if (totalCount > 0) totalAmount.divide(BigDecimal(totalCount), 2, RoundingMode.HALF_UP) else BigDecimal.ZERO
+
+        val largest = transactions.maxByOrNull { it.amount }
+
+        val topCategory = transactions
+            .groupBy { it.category ?: "Others" }
+            .mapValues { entry ->
+                val total = entry.value.sumOf { it.amount.toDouble() }.toBigDecimal()
+                val count = entry.value.size
+                total to count
+            }
+            .maxByOrNull { it.value.first }
+            ?.let { (name, value) ->
+                HighlightedGroup(name = name, amount = value.first, count = value.second)
+            }
+
+        val topMerchant = transactions
+            .groupBy { it.merchantName }
+            .mapValues { entry ->
+                val total = entry.value.sumOf { it.amount.toDouble() }.toBigDecimal()
+                val count = entry.value.size
+                total to count
+            }
+            .maxByOrNull { it.value.first }
+            ?.let { (name, value) ->
+                HighlightedGroup(name = name, amount = value.first, count = value.second)
+            }
+
+        val earliest = transactions.minOfOrNull { it.dateTime.toLocalDate() }
+        val latest = transactions.maxOfOrNull { it.dateTime.toLocalDate() }
+        val days = if (earliest != null && latest != null) {
+            ChronoUnit.DAYS.between(earliest, latest).toInt().coerceAtLeast(0) + 1
+        } else 1
+
+        val dailyAvg = if (days > 0) {
+            totalAmount.divide(BigDecimal(days), 2, RoundingMode.HALF_UP)
+        } else BigDecimal.ZERO
+
+        val today = LocalDate.now()
+        val todayAmount = transactions
+            .filter { it.dateTime.toLocalDate() == today }
+            .sumOf { it.amount.toDouble() }.toBigDecimal()
+
+        val recurringCount = transactions.count { it.isRecurring }
+
+        return AnalyticsInsights(
+            totalCount = totalCount,
+            avgAmount = avgAmount,
+            largest = largest?.let {
+                HighlightedTransaction(
+                    amount = it.amount,
+                    label = it.merchantName,
+                    category = it.category
+                )
+            },
+            topCategory = topCategory,
+            topMerchant = topMerchant,
+            dailyAvg = dailyAvg,
+            todayAmount = todayAmount,
+            recurringCount = recurringCount
+        )
+    }
+
+    private fun buildLast7DailyTrendSeries(
+        transactions: List<com.pennywiseai.tracker.data.database.entity.TransactionEntity>,
+        endInclusive: LocalDate
+    ): List<TrendPoint> {
+        val start = endInclusive.minusDays(6)
+        val totalsByDate = transactions
+            .groupBy { it.dateTime.toLocalDate() }
+            .mapValues { (_, txns) -> txns.sumOf { it.amount.toDouble() }.toBigDecimal() }
+
+        return (0..6).map { offset ->
+            val date = start.plusDays(offset.toLong())
+            TrendPoint(
+                label = date.dayOfWeek.name.take(3),
+                amount = totalsByDate[date] ?: BigDecimal.ZERO
+            )
+        }
+    }
+
+    private fun buildLast4WeeklyTrendSeries(
+        transactions: List<com.pennywiseai.tracker.data.database.entity.TransactionEntity>,
+        endInclusive: LocalDate
+    ): List<TrendPoint> {
+        // Build 4 weeks buckets ending on endInclusive. Week 4 is most recent week (7 days), week1 is oldest.
+        val weeks = (0..3).map { i ->
+            val weekEnd = endInclusive.minusDays((3 - i) * 7L)
+            val weekStart = weekEnd.minusDays(6)
+            weekStart to weekEnd
+        }
+
+        val totalsByDate = transactions
+            .groupBy { it.dateTime.toLocalDate() }
+            .mapValues { (_, txns) -> txns.sumOf { it.amount.toDouble() }.toBigDecimal() }
+
+        return weeks.mapIndexed { idx, (start, end) ->
+            val total = (0..ChronoUnit.DAYS.between(start, end).toInt()).fold(BigDecimal.ZERO) { acc, off ->
+                val d = start.plusDays(off.toLong())
+                acc + (totalsByDate[d] ?: BigDecimal.ZERO)
+            }
+            TrendPoint(label = "W${idx + 1}", amount = total)
+        }
+    }
 }
 
 /**
@@ -232,7 +395,8 @@ private data class FilterState(
     val period: TimePeriod,
     val customRange: Pair<LocalDate, LocalDate>?,
     val typeFilter: TransactionTypeFilter,
-    val currency: String
+    val currency: String,
+    val bank: String?
 )
 
 data class AnalyticsUiState(
@@ -244,7 +408,13 @@ data class AnalyticsUiState(
     val topCategory: String? = null,
     val topCategoryPercentage: Float = 0f,
     val currency: String = "INR",
-    val isLoading: Boolean = true
+    val isLoading: Boolean = true,
+    val insights: AnalyticsInsights = AnalyticsInsights(),
+    val weeklyTrend: List<TrendPoint> = emptyList(),
+    val monthlyTrend: List<TrendPoint> = emptyList(),
+    val banks: List<String> = emptyList(),
+    val selectedBank: String? = null,
+    val bankTransactionCounts: Map<String, Int> = emptyMap()
 )
 
 data class CategoryData(
@@ -259,5 +429,33 @@ data class MerchantData(
     val amount: BigDecimal,
     val transactionCount: Int,
     val isSubscription: Boolean
+)
+
+data class AnalyticsInsights(
+    val totalCount: Int = 0,
+    val avgAmount: BigDecimal = BigDecimal.ZERO,
+    val largest: HighlightedTransaction? = null,
+    val topCategory: HighlightedGroup? = null,
+    val topMerchant: HighlightedGroup? = null,
+    val dailyAvg: BigDecimal = BigDecimal.ZERO,
+    val todayAmount: BigDecimal = BigDecimal.ZERO,
+    val recurringCount: Int = 0
+)
+
+data class HighlightedTransaction(
+    val amount: BigDecimal,
+    val label: String,
+    val category: String?
+)
+
+data class HighlightedGroup(
+    val name: String,
+    val amount: BigDecimal,
+    val count: Int
+)
+
+data class TrendPoint(
+    val label: String,
+    val amount: BigDecimal
 )
 

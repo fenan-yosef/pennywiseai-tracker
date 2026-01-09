@@ -40,6 +40,7 @@ import com.pennywiseai.tracker.data.database.entity.TransactionEntity
 import com.pennywiseai.tracker.data.database.entity.TransactionType
 import com.pennywiseai.tracker.presentation.common.TimePeriod
 import com.pennywiseai.tracker.presentation.common.TransactionTypeFilter
+import com.pennywiseai.tracker.presentation.transactions.AnalyticsInsights
 import com.pennywiseai.tracker.ui.components.*
 import com.pennywiseai.tracker.ui.components.CollapsibleFilterRow
 import com.pennywiseai.tracker.ui.theme.*
@@ -74,6 +75,7 @@ fun TransactionsScreen(
     val currencyGroupedTotals by viewModel.currencyGroupedTotals.collectAsState()
     val availableCurrencies by viewModel.availableCurrencies.collectAsState()
     val selectedCurrency by viewModel.selectedCurrency.collectAsState()
+    val insights by viewModel.insights.collectAsState()
     val sortOption by viewModel.sortOption.collectAsState()
     val smsScanMonths by viewModel.smsScanMonths.collectAsState()
     val customDateRange by viewModel.customDateRange.collectAsState()
@@ -424,6 +426,15 @@ fun TransactionsScreen(
                 .padding(horizontal = Dimensions.Padding.content)
                 .padding(top = Spacing.sm)
         )
+
+        AnalyticsInsightsCard(
+            insights = insights,
+            currency = selectedCurrency,
+            isLoading = uiState.isLoading,
+            modifier = Modifier
+                .padding(horizontal = Dimensions.Padding.content)
+                .padding(top = Spacing.xs)
+        )
         
         // Category Filter Chip (if active) - Moved to its own row
         categoryFilter?.let { category ->
@@ -608,6 +619,94 @@ private fun TransactionSearchBar(
             focusRequester?.let { Modifier.focusRequester(it) } ?: Modifier
         )
     )
+}
+
+@Composable
+private fun AnalyticsInsightsCard(
+    insights: AnalyticsInsights,
+    currency: String,
+    isLoading: Boolean,
+    modifier: Modifier = Modifier
+) {
+    if (isLoading && insights.totalCount == 0) return
+
+    PennyWiseCard(modifier = modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.fillMaxWidth().padding(Dimensions.Padding.content)) {
+            Text(
+                text = "Insights",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            Spacer(modifier = Modifier.height(Spacing.sm))
+
+            InsightRow(
+                title = "Transactions",
+                value = insights.totalCount.toString(),
+                subtitle = "${insights.expenseCount} expenses • ${insights.incomeCount} income"
+            )
+
+            InsightRow(
+                title = "Avg expense",
+                value = CurrencyFormatter.formatCurrency(insights.avgExpense, currency),
+                subtitle = "Avg income ${CurrencyFormatter.formatCurrency(insights.avgIncome, currency)}"
+            )
+
+            insights.largestExpense?.let {
+                InsightRow(
+                    title = "Largest expense",
+                    value = CurrencyFormatter.formatCurrency(it.amount, currency),
+                    subtitle = listOfNotNull(it.label, it.category).joinToString(" · ")
+                )
+            }
+
+            insights.largestIncome?.let {
+                InsightRow(
+                    title = "Largest income",
+                    value = CurrencyFormatter.formatCurrency(it.amount, currency),
+                    subtitle = listOfNotNull(it.label, it.category).joinToString(" · ")
+                )
+            }
+
+            insights.topExpenseCategory?.let {
+                InsightRow(
+                    title = "Top category",
+                    value = CurrencyFormatter.formatCurrency(it.amount, currency),
+                    subtitle = "${it.name} • ${it.count} tx"
+                )
+            }
+
+            insights.topExpenseMerchant?.let {
+                InsightRow(
+                    title = "Top merchant",
+                    value = CurrencyFormatter.formatCurrency(it.amount, currency),
+                    subtitle = "${it.name} • ${it.count} tx"
+                )
+            }
+
+            InsightRow(
+                title = "Daily avg vs today",
+                value = CurrencyFormatter.formatCurrency(insights.todayExpense, currency),
+                subtitle = "Daily avg ${CurrencyFormatter.formatCurrency(insights.dailyAvgExpense, currency)}"
+            )
+        }
+    }
+}
+
+@Composable
+private fun InsightRow(
+    title: String,
+    value: String,
+    subtitle: String? = null
+) {
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = Spacing.xs)) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(title, style = MaterialTheme.typography.labelLarge)
+            Text(value, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+        }
+        subtitle?.takeIf { it.isNotBlank() }?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
 }
 
 

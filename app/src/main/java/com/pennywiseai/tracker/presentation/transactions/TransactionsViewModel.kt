@@ -20,9 +20,11 @@ import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.math.BigDecimal
+import java.math.RoundingMode
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.YearMonth
+import java.time.temporal.ChronoUnit
 import javax.inject.Inject
 
 @OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
@@ -134,6 +136,9 @@ class TransactionsViewModel @Inject constructor(
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = FilteredTotals()
     )
+
+    private val _insights = MutableStateFlow(AnalyticsInsights())
+    val insights: StateFlow<AnalyticsInsights> = _insights.asStateFlow()
     
     private val _deletedTransaction = MutableStateFlow<TransactionEntity?>(null)
     val deletedTransaction: StateFlow<TransactionEntity?> = _deletedTransaction.asStateFlow()
@@ -230,6 +235,7 @@ class TransactionsViewModel @Inject constructor(
                 )
                 // Calculate totals for filtered transactions
                 _currencyGroupedTotals.value = calculateCurrencyGroupedTotals(transactions)
+                _insights.value = calculateInsights(transactions)
 
                 // Auto-select primary currency if not already selected or if current currency no longer exists
                 val currentCurrency = selectedCurrency.value
@@ -614,6 +620,91 @@ class TransactionsViewModel @Inject constructor(
             transactionCount = transactions.size
         )
     }
+
+    private fun calculateInsights(transactions: List<TransactionEntity>): AnalyticsInsights {
+        if (transactions.isEmpty()) return AnalyticsInsights()
+
+        val incomeTx = transactions.filter { it.transactionType == TransactionType.INCOME }
+        val expenseTx = transactions.filter { it.transactionType == TransactionType.EXPENSE }
+
+        val avgExpense = if (expenseTx.isNotEmpty()) {
+            expenseTx.sumOf { it.amount.toDouble() }.toBigDecimal()
+                .divide(BigDecimal(expenseTx.size), 2, RoundingMode.HALF_UP)
+        } else BigDecimal.ZERO
+
+        val avgIncome = if (incomeTx.isNotEmpty()) {
+            incomeTx.sumOf { it.amount.toDouble() }.toBigDecimal()
+                .divide(BigDecimal(incomeTx.size), 2, RoundingMode.HALF_UP)
+        } else BigDecimal.ZERO
+
+        val largestExpense = expenseTx.maxByOrNull { it.amount }
+        val largestIncome = incomeTx.maxByOrNull { it.amount }
+
+        val topExpenseCategory = expenseTx
+            .groupBy { it.category }
+            .mapValues { entry ->
+                val total = entry.value.sumOf { it.amount.toDouble() }.toBigDecimal()
+                val count = entry.value.size
+                total to count
+            }
+            .maxByOrNull { it.value.first }?.let { (name, value) ->
+                HighlightedGroup(name = name, amount = value.first, count = value.second)
+            }
+
+        val topExpenseMerchant = expenseTx
+            .groupBy { it.merchantName }
+            .mapValues { entry ->
+                val total = entry.value.sumOf { it.amount.toDouble() }.toBigDecimal()
+                val count = entry.value.size
+                total to count
+            }
+            .maxByOrNull { it.value.first }?.let { (name, value) ->
+                HighlightedGroup(name = name, amount = value.first, count = value.second)
+            }
+
+        // Daily averages based on the active filtered range
+        val earliest = transactions.minOfOrNull { it.dateTime.toLocalDate() }
+        val latest = transactions.maxOfOrNull { it.dateTime.toLocalDate() }
+        val days = if (earliest != null && latest != null) {
+            ChronoUnit.DAYS.between(earliest, latest).toInt().coerceAtLeast(0) + 1
+        } else 1
+
+        val totalExpense = expenseTx.sumOf { it.amount.toDouble() }.toBigDecimal()
+        val dailyAvgExpense = if (days > 0) {
+            totalExpense.divide(BigDecimal(days), 2, RoundingMode.HALF_UP)
+        } else BigDecimal.ZERO
+
+        val today = LocalDate.now()
+        val todayExpense = expenseTx
+            .filter { it.dateTime.toLocalDate() == today }
+            .sumOf { it.amount.toDouble() }.toBigDecimal()
+
+        return AnalyticsInsights(
+            totalCount = transactions.size,
+            incomeCount = incomeTx.size,
+            expenseCount = expenseTx.size,
+            avgExpense = avgExpense,
+            avgIncome = avgIncome,
+            largestExpense = largestExpense?.let {
+                HighlightedTransaction(
+                    amount = it.amount,
+                    label = it.merchantName,
+                    category = it.category
+                )
+            },
+            largestIncome = largestIncome?.let {
+                HighlightedTransaction(
+                    amount = it.amount,
+                    label = it.merchantName,
+                    category = it.category
+                )
+            },
+            topExpenseCategory = topExpenseCategory,
+            topExpenseMerchant = topExpenseMerchant,
+            dailyAvgExpense = dailyAvgExpense,
+            todayExpense = todayExpense
+        )
+    }
     
     fun getReportUrl(transaction: TransactionEntity): String {
         // If we have the original SMS body, create report URL
@@ -676,4 +767,30 @@ data class FilteredTotals(
     val investment: BigDecimal = BigDecimal.ZERO,
     val netBalance: BigDecimal = BigDecimal.ZERO,
     val transactionCount: Int = 0
+)
+
+data class AnalyticsInsights(
+    val totalCount: Int = 0,
+    val incomeCount: Int = 0,
+    val expenseCount: Int = 0,
+    val avgExpense: BigDecimal = BigDecimal.ZERO,
+    val avgIncome: BigDecimal = BigDecimal.ZERO,
+    val largestExpense: HighlightedTransaction? = null,
+    val largestIncome: HighlightedTransaction? = null,
+    val topExpenseCategory: HighlightedGroup? = null,
+    val topExpenseMerchant: HighlightedGroup? = null,
+    val dailyAvgExpense: BigDecimal = BigDecimal.ZERO,
+    val todayExpense: BigDecimal = BigDecimal.ZERO
+)
+
+data class HighlightedTransaction(
+    val amount: BigDecimal,
+    val label: String,
+    val category: String?
+)
+
+data class HighlightedGroup(
+    val name: String,
+    val amount: BigDecimal,
+    val count: Int
 )
