@@ -4,8 +4,14 @@ import java.time.LocalDate
 import java.time.YearMonth
 
 enum class TimePeriod(val label: String) {
+    TODAY("Today"),
+    YESTERDAY("Yesterday"),
+    THIS_WEEK("This Week"),
+    LAST_7_DAYS("Last 7 Days"),
     THIS_MONTH("This Month"),
     LAST_MONTH("Last Month"),
+    THIS_QUARTER("This Quarter"),
+    LAST_QUARTER("Last Quarter"),
     CURRENT_FY("Current FY"),
     ALL("All Time"),
     CUSTOM("Custom Range")
@@ -23,6 +29,13 @@ enum class TransactionTypeFilter(val label: String) {
 fun getDateRangeForPeriod(period: TimePeriod): Pair<LocalDate, LocalDate>? {
     val today = LocalDate.now()
     return when (period) {
+        TimePeriod.TODAY -> today to today
+        TimePeriod.YESTERDAY -> today.minusDays(1) to today.minusDays(1)
+        TimePeriod.THIS_WEEK -> {
+            val monday = today.minusDays((today.dayOfWeek.value - 1).toLong())
+            monday to today
+        }
+        TimePeriod.LAST_7_DAYS -> today.minusDays(6) to today
         TimePeriod.THIS_MONTH -> {
             val start = YearMonth.now().atDay(1)
             start to today
@@ -31,6 +44,18 @@ fun getDateRangeForPeriod(period: TimePeriod): Pair<LocalDate, LocalDate>? {
             val lastMonth = YearMonth.now().minusMonths(1)
             val start = lastMonth.atDay(1)
             val end = lastMonth.atEndOfMonth()
+            start to end
+        }
+        TimePeriod.THIS_QUARTER -> {
+            val currentQuarterStartMonth = ((today.monthValue - 1) / 3) * 3 + 1
+            val start = LocalDate.of(today.year, currentQuarterStartMonth, 1)
+            start to today
+        }
+        TimePeriod.LAST_QUARTER -> {
+            val currentQuarterStartMonth = ((today.monthValue - 1) / 3) * 3 + 1
+            val currentQuarterStart = LocalDate.of(today.year, currentQuarterStartMonth, 1)
+            val end = currentQuarterStart.minusDays(1)
+            val start = end.minusMonths(2).withDayOfMonth(1)
             start to end
         }
         TimePeriod.CURRENT_FY -> {
