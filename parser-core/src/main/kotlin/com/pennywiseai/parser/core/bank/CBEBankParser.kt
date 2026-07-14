@@ -22,24 +22,17 @@ class CBEBankParser : BankParser() {
     }
 
     override fun extractAmount(message: String): BigDecimal? {
-        // CBE patterns: "ETB 3,000.00", "ETB 25.00", "ETB250"
-        val patterns = listOf(
-            Regex("""ETB\s+([0-9,]+(?:\.[0-9]{2})?)\s""", RegexOption.IGNORE_CASE),
-            Regex("""ETB\s*([0-9,]+(?:\.[0-9]{2})?)(?:\s|$|\.)""", RegexOption.IGNORE_CASE),
-            Regex(
-                """(?:Credited|debited|transfered)\s+(?:with\s+)?ETB\s+([0-9,]+(?:\.[0-9]{2})?)""",
-                RegexOption.IGNORE_CASE
-            )
+        val pattern = Regex(
+            """ETB\s*([0-9,]+(?:\.[0-9]{2})?)""",
+            RegexOption.IGNORE_CASE
         )
 
-        for (pattern in patterns) {
-            pattern.find(message)?.let { match ->
-                val amountStr = match.groupValues[1].replace(",", "")
-                return try {
-                    BigDecimal(amountStr)
-                } catch (e: NumberFormatException) {
-                    null
-                }
+        pattern.find(message)?.let { match ->
+            val amountStr = match.groupValues[1].replace(",", "")
+            return try {
+                BigDecimal(amountStr)
+            } catch (e: NumberFormatException) {
+                null
             }
         }
 
@@ -50,6 +43,9 @@ class CBEBankParser : BankParser() {
         val lowerMessage = message.lowercase()
 
         return when {
+            // Received money is income
+            lowerMessage.contains("you have received") -> TransactionType.INCOME
+
             // Credit transactions are income
             lowerMessage.contains("has been credited") -> TransactionType.INCOME
             lowerMessage.contains("credited with") -> TransactionType.INCOME
@@ -67,7 +63,21 @@ class CBEBankParser : BankParser() {
     }
 
     override fun extractMerchant(message: String, sender: String): String? {
-        // Pattern 1: "from Be***" (credit transaction)
+        // Pattern 1: Name in parentheses after "from account" or "to account"
+        // e.g. "from account 1**0681 (Yishak Abrham Nibretu)"
+        // e.g. "to account 1**7818 (Yohannes Musse Yilma)"
+        val nameInParens = Regex(
+            """(?:from|to)\s+account\s+\S+\s+\(([^)]+)\)""",
+            RegexOption.IGNORE_CASE
+        )
+        nameInParens.find(message)?.let { match ->
+            val name = match.groupValues[1].trim()
+            if (name.isNotEmpty()) {
+                return cleanMerchantName(name)
+            }
+        }
+
+        // Pattern 2: "from Be***" (credit transaction)
         val fromPattern = Regex("""from\s+([^,\s]+\*{0,3}[^,\s]*)""", RegexOption.IGNORE_CASE)
         fromPattern.find(message)?.let { match ->
             val merchant = match.groupValues[1].trim()
@@ -76,7 +86,7 @@ class CBEBankParser : BankParser() {
             }
         }
 
-        // Pattern 2: "to Se*****" (transfer transaction)
+        // Pattern 3: "to Se*****" (transfer transaction)
         val toPattern = Regex("""to\s+([^,\s]+\*{0,5}[^,\s]*)""", RegexOption.IGNORE_CASE)
         toPattern.find(message)?.let { match ->
             val merchant = match.groupValues[1].trim()
@@ -85,7 +95,7 @@ class CBEBankParser : BankParser() {
             }
         }
 
-        // Pattern 3: Service charge or general debit
+        // Pattern 4: Service charge or general debit
         if (message.contains("s.charge", ignoreCase = true) ||
             message.contains("service charge", ignoreCase = true)
         ) {
@@ -112,9 +122,9 @@ class CBEBankParser : BankParser() {
     }
 
     override fun extractBalance(message: String): BigDecimal? {
-        // Pattern: "Your Current Balance is ETB 3,104.87"
+        // Pattern: "Your Current Balance is ETB 3,104.87" or "current balance is ETB25,800.60"
         val balancePattern =
-            Regex("""Current Balance is ETB\s+([0-9,]+(?:\.[0-9]{2})?)""", RegexOption.IGNORE_CASE)
+            Regex("""current balance is ETB\s*([0-9,]+(?:\.[0-9]{2})?)""", RegexOption.IGNORE_CASE)
         balancePattern.find(message)?.let { match ->
             val balanceStr = match.groupValues[1].replace(",", "")
             return try {
@@ -150,6 +160,18 @@ class CBEBankParser : BankParser() {
             return match.groupValues[1]
         }
 
+        // Receipt URL from mbreciept: "https://mbreciept.cbe.com.et/v2-hfHCxzWXP84K6nu3tO04"
+        val mbrecieptPattern = Regex("""mbreciept\.cbe\.com\.et/v2-(\w+)""", RegexOption.IGNORE_CASE)
+        mbrecieptPattern.find(message)?.let { match ->
+            return match.groupValues[1]
+        }
+
+        // BranchReceipt URL: "BranchReceipt/FT26184G2GKQ&53250122"
+        val branchReceiptPattern = Regex("""BranchReceipt/(\w+&\w+)""", RegexOption.IGNORE_CASE)
+        branchReceiptPattern.find(message)?.let { match ->
+            return match.groupValues[1]
+        }
+
         return super.extractReference(message)
     }
 
@@ -163,6 +185,8 @@ class CBEBankParser : BankParser() {
             "has been credited",
             "has been debited",
             "you have transfered",
+            "you have received",
+            "transferred",
             "current balance",
             "thank you for banking with cbe",
             "etb"

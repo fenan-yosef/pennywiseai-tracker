@@ -37,7 +37,7 @@ class CBEBankParserTest {
                 message = "Dear [Name] your Account 1*********9388 has been debited with ETB 25.00. Your Current Balance is ETB 3,079.87 Thank you for Banking with CBE! https://apps.cbe.com.et:100/?id=FT25256RP1FK27799388",
                 sender = "CBE",
                 expected = ExpectedTransaction(
-                    amount = BigDecimal("3079.87"),
+                    amount = BigDecimal("25.00"),
                     currency = "ETB",
                     type = TransactionType.EXPENSE,
                     accountLast4 = "9388",
