@@ -45,6 +45,10 @@ class UserPreferencesRepository @Inject constructor(
         val FIRST_LAUNCH_TIME = longPreferencesKey("first_launch_time")
         val HAS_SHOWN_REVIEW_PROMPT = booleanPreferencesKey("has_shown_review_prompt")
         val LAST_REVIEW_PROMPT_TIME = longPreferencesKey("last_review_prompt_time")
+
+        // Export reminder preferences
+        val EXPORT_REMINDER_ENABLED = booleanPreferencesKey("export_reminder_enabled")
+        val EXPORT_REMINDER_DAY = intPreferencesKey("export_reminder_day") // 1=Monday ... 7=Sunday
     }
 
     val userPreferences: Flow<UserPreferences> = context.dataStore.data
@@ -259,6 +263,25 @@ class UserPreferencesRepository @Inject constructor(
     suspend fun updateLastReviewPromptTime(timestamp: Long) {
         context.dataStore.edit { preferences ->
             preferences[PreferencesKeys.LAST_REVIEW_PROMPT_TIME] = timestamp
+        }
+    }
+
+    // Export Reminder methods
+    val exportReminderEnabled: Flow<Boolean> = context.dataStore.data
+        .map { preferences -> preferences[PreferencesKeys.EXPORT_REMINDER_ENABLED] ?: false }
+
+    val exportReminderDay: Flow<Int> = context.dataStore.data
+        .map { preferences -> preferences[PreferencesKeys.EXPORT_REMINDER_DAY] ?: 5 } // Default: Friday
+
+    suspend fun setExportReminderEnabled(enabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.EXPORT_REMINDER_ENABLED] = enabled
+        }
+    }
+
+    suspend fun setExportReminderDay(day: Int) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.EXPORT_REMINDER_DAY] = day.coerceIn(1, 7)
         }
     }
 

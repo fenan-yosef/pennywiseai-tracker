@@ -28,6 +28,7 @@ import com.pennywiseai.tracker.data.backup.ImportStrategy
 import android.content.Intent
 import androidx.core.content.FileProvider
 import com.pennywiseai.tracker.core.Constants
+import com.pennywiseai.tracker.worker.ExportReminderScheduler
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.first
@@ -42,7 +43,8 @@ class SettingsViewModel @Inject constructor(
     private val userPreferencesRepository: UserPreferencesRepository,
     private val unrecognizedSmsRepository: UnrecognizedSmsRepository,
     private val backupExporter: BackupExporter,
-    private val backupImporter: BackupImporter
+    private val backupImporter: BackupImporter,
+    private val exportReminderScheduler: ExportReminderScheduler
 ) : ViewModel() {
     
     private val downloadManager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
@@ -84,6 +86,13 @@ class SettingsViewModel @Inject constructor(
             initialValue = 0
         )
     
+    // Export reminder state
+    val exportReminderEnabled = userPreferencesRepository.exportReminderEnabled
+    val exportReminderDay = userPreferencesRepository.exportReminderDay
+
+    private val _exportReminderMessage = MutableStateFlow<String?>(null)
+    val exportReminderMessage: StateFlow<String?> = _exportReminderMessage.asStateFlow()
+
     init {
         checkDownloadStatus()
         // Also sync with model repository
@@ -527,6 +536,30 @@ class SettingsViewModel @Inject constructor(
     
     fun clearImportExportMessage() {
         _importExportMessage.value = null
+    }
+
+    // ==================== Export Reminder ====================
+
+    fun setExportReminderEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            userPreferencesRepository.setExportReminderEnabled(enabled)
+            if (enabled) {
+                val day = userPreferencesRepository.exportReminderDay.first()
+                exportReminderScheduler.schedule(day)
+            } else {
+                exportReminderScheduler.cancel()
+            }
+        }
+    }
+
+    fun setExportReminderDay(day: Int) {
+        viewModelScope.launch {
+            userPreferencesRepository.setExportReminderDay(day)
+            val enabled = userPreferencesRepository.exportReminderEnabled.first()
+            if (enabled) {
+                exportReminderScheduler.schedule(day)
+            }
+        }
     }
 }
 

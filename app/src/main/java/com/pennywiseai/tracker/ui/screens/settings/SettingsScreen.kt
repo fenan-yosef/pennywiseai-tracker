@@ -60,9 +60,12 @@ fun SettingsScreen(
     val smsScanAllTime by settingsViewModel.smsScanAllTime.collectAsStateWithLifecycle(initialValue = false)
     val importExportMessage by settingsViewModel.importExportMessage.collectAsStateWithLifecycle()
     val exportedBackupFile by settingsViewModel.exportedBackupFile.collectAsStateWithLifecycle()
+    val exportReminderEnabled by settingsViewModel.exportReminderEnabled.collectAsStateWithLifecycle(initialValue = false)
+    val exportReminderDay by settingsViewModel.exportReminderDay.collectAsStateWithLifecycle(initialValue = 5)
     var showSmsScanDialog by remember { mutableStateOf(false) }
     var showExportOptionsDialog by remember { mutableStateOf(false) }
     var showTimeoutDialog by remember { mutableStateOf(false) }
+    var showExportReminderDayDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
     
     // File picker for import
@@ -448,6 +451,74 @@ fun SettingsScreen(
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+        }
+        
+        // Export Reminder
+        PennyWiseCard(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.padding(Dimensions.Padding.content),
+                verticalArrangement = Arrangement.spacedBy(Spacing.sm)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.md),
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(
+                            Icons.Default.Notifications,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Column {
+                            Text(
+                                text = "Weekly Backup Reminder",
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                text = "Get reminded every ${dayNames()[exportReminderDay]} at 10 AM",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    Switch(
+                        checked = exportReminderEnabled,
+                        onCheckedChange = { settingsViewModel.setExportReminderEnabled(it) }
+                    )
+                }
+                
+                AnimatedVisibility(visible = exportReminderEnabled) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Reminder Day",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        TextButton(onClick = { showExportReminderDayDialog = true }) {
+                            Text(
+                                text = dayNames()[exportReminderDay] ?: "Friday",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Icon(
+                                Icons.Default.ArrowDropDown,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                }
             }
         }
         
@@ -1023,5 +1094,53 @@ fun SettingsScreen(
             }
         )
     }
+    
+    // Export Reminder Day Picker Dialog
+    if (showExportReminderDayDialog) {
+        AlertDialog(
+            onDismissRequest = { showExportReminderDayDialog = false },
+            title = { Text("Reminder Day") },
+            text = {
+                Column {
+                    val dayOptions = listOf(
+                        1 to "Monday", 2 to "Tuesday", 3 to "Wednesday",
+                        4 to "Thursday", 5 to "Friday", 6 to "Saturday", 7 to "Sunday"
+                    )
+                    dayOptions.forEach { (day, label) ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    settingsViewModel.setExportReminderDay(day)
+                                    showExportReminderDayDialog = false
+                                }
+                                .padding(vertical = Spacing.sm),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = exportReminderDay == day,
+                                onClick = {
+                                    settingsViewModel.setExportReminderDay(day)
+                                    showExportReminderDayDialog = false
+                                }
+                            )
+                            Spacer(Modifier.width(Spacing.sm))
+                            Text(text = label, style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showExportReminderDayDialog = false }) {
+                    Text("Done")
+                }
+            }
+        )
+    }
         }
 }
+
+private fun dayNames(): Map<Int, String> = mapOf(
+    1 to "Monday", 2 to "Tuesday", 3 to "Wednesday",
+    4 to "Thursday", 5 to "Friday", 6 to "Saturday", 7 to "Sunday"
+)

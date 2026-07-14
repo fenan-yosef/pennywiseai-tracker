@@ -1,6 +1,7 @@
 package com.pennywiseai.tracker.ui.components.insights
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.TrendingDown
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.TrendingFlat
@@ -55,17 +56,17 @@ fun CategoryTrendsCard(
                     // Trend indicator
                     when (trend.trend) {
                         TrendDirection.RISING -> Icon(
-                            Icons.Default.TrendingUp, null,
+                            Icons.AutoMirrored.Filled.TrendingUp, null,
                             tint = MaterialTheme.colorScheme.error,
                             modifier = Modifier.size(16.dp)
                         )
                         TrendDirection.FALLING -> Icon(
-                            Icons.Default.TrendingDown, null,
+                            Icons.AutoMirrored.Filled.TrendingDown, null,
                             tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(16.dp)
                         )
                         TrendDirection.STABLE -> Icon(
-                            Icons.Default.TrendingFlat, null,
+                            Icons.Filled.TrendingFlat, null,
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(16.dp)
                         )
