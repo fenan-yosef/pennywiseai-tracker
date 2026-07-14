@@ -313,4 +313,48 @@ class TransactionRepository @Inject constructor(
             (dto.bankName ?: "Unknown Bank") to MonthlyBreakdown(total = total, income = income, expenses = expenses)
         }
     }
+
+    // ==================== Analytics Aggregation ====================
+
+    suspend fun getDailyTotalsInRange(
+        startDate: LocalDate, endDate: LocalDate, currency: String, transactionType: TransactionType?
+    ): List<TransactionDao.DailyTotal> = transactionDao.getDailyTotalsInRange(
+        startDate.atStartOfDay(), endDate.atTime(23, 59, 59), currency, transactionType
+    )
+
+    suspend fun getWeeklyTotalsInRange(
+        startDate: LocalDate, endDate: LocalDate, currency: String, transactionType: TransactionType?
+    ): List<TransactionDao.WeeklyTotal> = transactionDao.getWeeklyTotalsInRange(
+        startDate.atStartOfDay(), endDate.atTime(23, 59, 59), currency, transactionType
+    )
+
+    suspend fun getMonthlyTotalsInRange(
+        startDate: LocalDate, endDate: LocalDate, currency: String, transactionType: TransactionType?
+    ): List<TransactionDao.MonthlyTotal> = transactionDao.getMonthlyTotalsInRange(
+        startDate.atStartOfDay(), endDate.atTime(23, 59, 59), currency, transactionType
+    )
+
+    suspend fun getCategoryTotalsInRange(
+        startDate: LocalDate, endDate: LocalDate, currency: String, transactionType: TransactionType?
+    ): List<TransactionDao.CategoryTotal> = transactionDao.getCategoryTotalsInRange(
+        startDate.atStartOfDay(), endDate.atTime(23, 59, 59), currency, transactionType
+    )
+
+    suspend fun getWeekdayDistribution(
+        startDate: LocalDate, endDate: LocalDate, currency: String, transactionType: TransactionType?
+    ): List<TransactionDao.WeekdayDistribution> = transactionDao.getWeekdayDistribution(
+        startDate.atStartOfDay(), endDate.atTime(23, 59, 59), currency, transactionType
+    )
+
+    suspend fun getDayOfMonthDistribution(
+        startDate: LocalDate, endDate: LocalDate, currency: String, transactionType: TransactionType?
+    ): List<TransactionDao.DayOfMonthDistribution> = transactionDao.getDayOfMonthDistribution(
+        startDate.atStartOfDay(), endDate.atTime(23, 59, 59), currency, transactionType
+    )
+
+    suspend fun getAmountStats(
+        startDate: LocalDate, endDate: LocalDate, currency: String, transactionType: TransactionType?
+    ): TransactionDao.AmountStats? = transactionDao.getAmountStats(
+        startDate.atStartOfDay(), endDate.atTime(23, 59, 59), currency, transactionType
+    )
 }

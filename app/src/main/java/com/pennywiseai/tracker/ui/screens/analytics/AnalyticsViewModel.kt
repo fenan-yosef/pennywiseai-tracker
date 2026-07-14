@@ -10,8 +10,13 @@ import com.pennywiseai.tracker.utils.CurrencyUtils
 import com.pennywiseai.tracker.data.database.entity.TransactionType
 import com.pennywiseai.tracker.data.database.entity.TransactionEntity
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlin.math.abs
+import kotlin.math.sqrt
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.LocalDate
@@ -22,6 +27,7 @@ import java.time.temporal.ChronoUnit
 import kotlin.math.max
 import javax.inject.Inject
 
+@OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class AnalyticsViewModel @Inject constructor(
     private val transactionRepository: TransactionRepository,
@@ -58,6 +64,9 @@ class AnalyticsViewModel @Inject constructor(
 
     private val _availableCurrencies = MutableStateFlow<List<String>>(emptyList())
     val availableCurrencies: StateFlow<List<String>> = _availableCurrencies.asStateFlow()
+
+    private val _activeTab = MutableStateFlow(AnalyticsTab.OVERVIEW)
+    val activeTab: StateFlow<AnalyticsTab> = _activeTab.asStateFlow()
 
     // Reactive UI state that automatically updates when any filter changes
     val uiState: StateFlow<AnalyticsUiState> = combine(
@@ -242,9 +251,23 @@ class AnalyticsViewModel @Inject constructor(
                     }
                 }
 
+                // New computations
+                val netSavings = totalIncome - totalExpenses
+                val dailySpending = buildDailySpending(bankFilteredTransactions, dateRange.first, dateRange.second)
+                val weeklyBreakdownList = buildWeeklyBreakdown(bankFilteredTransactions, dateRange.first, dateRange.second)
+                val monthlyBreakdownList = buildMonthlyBreakdown(bankFilteredTransactions)
+                val categoryTrendsList = buildCategoryTrends(bankFilteredTransactions)
+                val bankComparisonList = buildBankComparison(bankFilteredTransactions)
+                val anomalousList = buildAnomalousDetection(bankFilteredTransactions)
+                val velocity = buildSpendingVelocity(bankFilteredTransactions, dateRange.first, dateRange.second)
+                val overview = buildOverviewData(totalIncome, totalExpenses, netSavings, averageAmount,
+                    bankFilteredTransactions, categoryBreakdown, merchantBreakdown)
+                val heatmap = buildHeatmapDays(bankFilteredTransactions)
+
                 AnalyticsUiState(
                     totalSpending = totalSpending,
                     totalIncome = totalIncome,
+                    netSavings = netSavings,
                     netSavingsRate = netSavingsRate,
                     categoryBreakdown = categoryBreakdown,
                     topMerchants = merchantBreakdown,
@@ -264,7 +287,19 @@ class AnalyticsViewModel @Inject constructor(
                     weekendSpending = weekendSpending,
                     dayOfWeekDistribution = dayOfWeekMap,
                     transactionScaleCount = transactionScaleMap,
-                    projectedSpending = projectedSpending
+                    projectedSpending = projectedSpending,
+                    // New computed data:
+                    activeTab = _activeTab.value,
+                    overviewData = overview,
+                    dailyTrend = dailySpending,
+                    weeklyBreakdown = weeklyBreakdownList,
+                    monthlyBreakdown = monthlyBreakdownList,
+                    yearlyBreakdown = monthlyBreakdownList,
+                    categoryTrends = categoryTrendsList,
+                    bankComparison = bankComparisonList,
+                    anomalousTransactions = anomalousList,
+                    spendingVelocity = velocity,
+                    heatmapDays = heatmap
                 )
             }
         }
@@ -289,6 +324,8 @@ class AnalyticsViewModel @Inject constructor(
     fun selectBank(bank: String?) {
         _selectedBank.value = bank
     }
+
+    fun selectTab(tab: AnalyticsTab) { _activeTab.value = tab }
 
     fun setCustomDateRange(startDate: LocalDate, endDate: LocalDate) {
         require(startDate <= endDate) {
@@ -451,6 +488,126 @@ class AnalyticsViewModel @Inject constructor(
             } ?: TrendPoint(label, BigDecimal.ZERO)
         }
     }
+
+    // ==================== New Analytics Computations ====================
+
+    private fun buildDailySpending(
+        transactions: List<TransactionEntity>, start: LocalDate, end: LocalDate
+    ): List<DailySpending> {
+        val totals = transactions.groupBy { it.dateTime.toLocalDate() }
+            .mapValues { (_, txns) -> txns.sumOf { it.amount.toDouble() }.toBigDecimal() to txns.size }
+        return (0..ChronoUnit.DAYS.between(start, end)).map { offset ->
+            val date = start.plusDays(offset)
+            val (amount, count) = totals[date] ?: (BigDecimal.ZERO to 0)
+            DailySpending(date, date.dayOfWeek, amount, count)
+        }
+    }
+
+    private fun buildWeeklyBreakdown(
+        transactions: List<TransactionEntity>, start: LocalDate, end: LocalDate
+    ): List<WeeklySpending> {
+        val result = mutableListOf<WeeklySpending>()
+        var ws = start.minusDays((start.dayOfWeek.value - 1).toLong())
+        while (ws <= end) {
+            val we = ws.plusDays(6)
+            val txns = transactions.filter { val d = it.dateTime.toLocalDate(); !d.isBefore(ws) && !d.isAfter(we) }
+            result.add(WeeklySpending(ws, txns.sumOf { it.amount.toDouble() }.toBigDecimal(), txns.size))
+            ws = ws.plusWeeks(1)
+        }
+        return result
+    }
+
+    private fun buildMonthlyBreakdown(
+        transactions: List<TransactionEntity>
+    ): List<MonthlySpending> = transactions.groupBy { YearMonth.from(it.dateTime) }
+        .map { (ym, txns) ->
+            MonthlySpending(ym,
+                txns.sumOf { it.amount.toDouble() }.toBigDecimal(),
+                txns.filter { it.transactionType == TransactionType.INCOME }.sumOf { it.amount.toDouble() }.toBigDecimal(),
+                txns.filter { it.transactionType == TransactionType.EXPENSE }.sumOf { it.amount.toDouble() }.toBigDecimal(),
+                txns.size)
+        }.sortedBy { it.yearMonth }
+
+    private fun buildCategoryTrends(
+        transactions: List<TransactionEntity>
+    ): List<CategoryTrend> {
+        val topCategories = transactions.groupBy { it.category ?: "Others" }
+            .mapValues { it.value.sumOf { t -> t.amount.toDouble() }.toBigDecimal() }
+            .entries.sortedByDescending { it.value }.take(5).map { it.key }
+        return topCategories.map { cat ->
+            val monthlyAmounts = transactions.filter { (it.category ?: "Others") == cat }
+                .groupBy { YearMonth.from(it.dateTime) }
+                .mapValues { (_, txns) -> txns.sumOf { t -> t.amount.toDouble() }.toBigDecimal() }
+            val sorted = monthlyAmounts.keys.sorted()
+            val direction = if (sorted.size >= 2) {
+                val first = monthlyAmounts[sorted.first()] ?: BigDecimal.ZERO
+                val last = monthlyAmounts[sorted.last()] ?: BigDecimal.ZERO
+                when {
+                    last > first * BigDecimal("1.1") -> TrendDirection.RISING
+                    last < first * BigDecimal("0.9") -> TrendDirection.FALLING
+                    else -> TrendDirection.STABLE
+                }
+            } else TrendDirection.STABLE
+            val changePct = if (sorted.size >= 2 && (monthlyAmounts[sorted.first()] ?: BigDecimal.ZERO) > BigDecimal.ZERO)
+                ((monthlyAmounts[sorted.last()]!! - monthlyAmounts[sorted.first()]!!)
+                    .divide(monthlyAmounts[sorted.first()]!!, 4, RoundingMode.HALF_UP) * BigDecimal(100)).toFloat()
+            else 0f
+            CategoryTrend(cat, monthlyAmounts, direction, changePct)
+        }
+    }
+
+    private fun buildBankComparison(
+        transactions: List<TransactionEntity>
+    ): List<BankSummary> = transactions.groupBy { it.bankName ?: "Unknown Bank" }
+        .map { (bank, txns) ->
+            BankSummary(bank,
+                txns.filter { it.transactionType == TransactionType.INCOME }.sumOf { it.amount.toDouble() }.toBigDecimal(),
+                txns.filter { it.transactionType == TransactionType.EXPENSE }.sumOf { it.amount.toDouble() }.toBigDecimal(),
+                BigDecimal.ZERO, txns.size)
+        }.sortedByDescending { it.transactionCount }
+
+    private fun buildAnomalousDetection(
+        transactions: List<TransactionEntity>
+    ): List<AnomalousTransaction> {
+        if (transactions.size < 5) return emptyList()
+        val amounts = transactions.map { it.amount.toDouble() }
+        val mean = amounts.average()
+        val stddev = sqrt(amounts.map { (it - mean) * (it - mean) }.average())
+        if (stddev == 0.0) return emptyList()
+        return transactions.mapNotNull { tx ->
+            val zScore = (tx.amount.toDouble() - mean) / stddev
+            if (abs(zScore) > 2.0)
+                AnomalousTransaction(tx.id, tx.merchantName, tx.amount, tx.dateTime, tx.category ?: "Others", zScore, zScore > 0)
+            else null
+        }.sortedByDescending { abs(it.zScore) }.take(10)
+    }
+
+    private fun buildSpendingVelocity(
+        transactions: List<TransactionEntity>, start: LocalDate, end: LocalDate
+    ): SpendingVelocity {
+        val days = ChronoUnit.DAYS.between(start, end).coerceAtLeast(1) + 1
+        val total = transactions.sumOf { it.amount.toDouble() }.toBigDecimal()
+        val dailyAvg = if (days > 0) total.divide(BigDecimal(days), 2, RoundingMode.HALF_UP) else BigDecimal.ZERO
+        return SpendingVelocity(dailyAvg, dailyAvg * BigDecimal(7), dailyAvg * BigDecimal(30), TrendDirection.STABLE)
+    }
+
+    private fun buildOverviewData(
+        totalIncome: BigDecimal, totalExpense: BigDecimal, netSavings: BigDecimal,
+        avgAmount: BigDecimal, bankFiltered: List<TransactionEntity>,
+        categoryBreakdown: List<CategoryData>, topMerchants: List<MerchantData>
+    ): OverviewData {
+        val savingsRate = if (totalIncome > BigDecimal.ZERO)
+            (netSavings.divide(totalIncome, 4, RoundingMode.HALF_UP) * BigDecimal(100)).toFloat() else 0f
+        return OverviewData(totalIncome, totalExpense, netSavings, savingsRate, bankFiltered.size, avgAmount,
+            categoryBreakdown.firstOrNull()?.name ?: "", categoryBreakdown.firstOrNull()?.amount ?: BigDecimal.ZERO,
+            categoryBreakdown.firstOrNull()?.percentage ?: 0f,
+            topMerchants.firstOrNull()?.name ?: "", topMerchants.firstOrNull()?.amount ?: BigDecimal.ZERO)
+    }
+
+    private fun buildHeatmapDays(
+        transactions: List<TransactionEntity>
+    ): Map<LocalDate, BigDecimal> = transactions.groupBy { it.dateTime.toLocalDate() }
+        .mapValues { (_, txns) -> txns.sumOf { it.amount.toDouble() }.toBigDecimal() }
 }
 
 private data class FilterState(
@@ -459,71 +616,4 @@ private data class FilterState(
     val typeFilter: TransactionTypeFilter,
     val currency: String,
     val bank: String?
-)
-
-data class AnalyticsUiState(
-    val totalSpending: BigDecimal = BigDecimal.ZERO,
-    val totalIncome: BigDecimal = BigDecimal.ZERO,
-    val netSavingsRate: Float = 0f,
-    val categoryBreakdown: List<CategoryData> = emptyList(),
-    val topMerchants: List<MerchantData> = emptyList(),
-    val transactionCount: Int = 0,
-    val averageAmount: BigDecimal = BigDecimal.ZERO,
-    val topCategory: String? = null,
-    val topCategoryPercentage: Float = 0f,
-    val currency: String = "INR",
-    val isLoading: Boolean = true,
-    val insights: AnalyticsInsights = AnalyticsInsights(),
-    val weeklyTrend: List<TrendPoint> = emptyList(),
-    val monthlyTrend: List<TrendPoint> = emptyList(),
-    val banks: List<String> = emptyList(),
-    val selectedBank: String? = null,
-    val bankTransactionCounts: Map<String, Int> = emptyMap(),
-    val weekdaySpending: BigDecimal = BigDecimal.ZERO,
-    val weekendSpending: BigDecimal = BigDecimal.ZERO,
-    val dayOfWeekDistribution: Map<DayOfWeek, BigDecimal> = emptyMap(),
-    val transactionScaleCount: Map<String, Int> = emptyMap(),
-    val projectedSpending: BigDecimal = BigDecimal.ZERO
-)
-
-data class CategoryData(
-    val name: String,
-    val amount: BigDecimal,
-    val percentage: Float,
-    val transactionCount: Int
-)
-
-data class MerchantData(
-    val name: String,
-    val amount: BigDecimal,
-    val transactionCount: Int,
-    val isSubscription: Boolean
-)
-
-data class AnalyticsInsights(
-    val totalCount: Int = 0,
-    val avgAmount: BigDecimal = BigDecimal.ZERO,
-    val largest: HighlightedTransaction? = null,
-    val topCategory: HighlightedGroup? = null,
-    val topMerchant: HighlightedGroup? = null,
-    val dailyAvg: BigDecimal = BigDecimal.ZERO,
-    val todayAmount: BigDecimal = BigDecimal.ZERO,
-    val recurringCount: Int = 0
-)
-
-data class HighlightedTransaction(
-    val amount: BigDecimal,
-    val label: String,
-    val category: String?
-)
-
-data class HighlightedGroup(
-    val name: String,
-    val amount: BigDecimal,
-    val count: Int
-)
-
-data class TrendPoint(
-    val label: String,
-    val amount: BigDecimal
 )

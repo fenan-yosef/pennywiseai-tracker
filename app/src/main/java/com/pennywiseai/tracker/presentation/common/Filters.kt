@@ -13,6 +13,7 @@ enum class TimePeriod(val label: String) {
     THIS_QUARTER("This Quarter"),
     LAST_QUARTER("Last Quarter"),
     CURRENT_FY("Current FY"),
+    LAST_YEAR("Last Year"),
     ALL("All Time"),
     CUSTOM("Custom Range")
 }
@@ -68,6 +69,11 @@ fun getDateRangeForPeriod(period: TimePeriod): Pair<LocalDate, LocalDate>? {
                 LocalDate.of(currentYear - 1, 4, 1)  // Apr 1 of previous year
             }
             fyStart to today
+        }
+        TimePeriod.LAST_YEAR -> {
+            val start = LocalDate.of(today.year - 1, 1, 1)
+            val end = LocalDate.of(today.year - 1, 12, 31)
+            start to end
         }
         TimePeriod.ALL -> {
             // Use a reasonable date range for "All Time" - 10 years back to today

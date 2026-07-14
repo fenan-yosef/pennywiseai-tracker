@@ -233,5 +233,8 @@ dependencies {
     
     // OpenCSV for CSV export
     implementation(libs.opencsv)
+
+    // Vico - Compose charting library (Material 3)
+    implementation(libs.vico.compose.m3)
     testImplementation(kotlin("test"))
 }

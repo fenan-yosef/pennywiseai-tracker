@@ -221,4 +221,188 @@ interface TransactionDao {
         startDate: LocalDateTime,
         endDate: LocalDateTime
     ): Flow<List<TransactionEntity>>
+
+    // ==================== Analytics Aggregation DTOs & Queries ====================
+
+    data class DailyTotal(
+        @ColumnInfo(name = "date") val date: String,
+        @ColumnInfo(name = "total_amount") val totalAmount: java.math.BigDecimal,
+        @ColumnInfo(name = "tx_count") val transactionCount: Int
+    )
+
+    data class WeeklyTotal(
+        @ColumnInfo(name = "week_start") val weekStart: String,
+        @ColumnInfo(name = "total_amount") val totalAmount: java.math.BigDecimal,
+        @ColumnInfo(name = "tx_count") val transactionCount: Int
+    )
+
+    data class MonthlyTotal(
+        @ColumnInfo(name = "year_month") val yearMonth: String,
+        @ColumnInfo(name = "total_amount") val totalAmount: java.math.BigDecimal,
+        @ColumnInfo(name = "income") val income: java.math.BigDecimal,
+        @ColumnInfo(name = "expenses") val expenses: java.math.BigDecimal,
+        @ColumnInfo(name = "tx_count") val transactionCount: Int
+    )
+
+    data class CategoryTotal(
+        @ColumnInfo(name = "category") val category: String,
+        @ColumnInfo(name = "total_amount") val totalAmount: java.math.BigDecimal,
+        @ColumnInfo(name = "tx_count") val transactionCount: Int
+    )
+
+    data class WeekdayDistribution(
+        @ColumnInfo(name = "day_of_week") val dayOfWeek: Int,
+        @ColumnInfo(name = "total_amount") val totalAmount: java.math.BigDecimal,
+        @ColumnInfo(name = "tx_count") val transactionCount: Int
+    )
+
+    data class DayOfMonthDistribution(
+        @ColumnInfo(name = "day_of_month") val dayOfMonth: Int,
+        @ColumnInfo(name = "total_amount") val totalAmount: java.math.BigDecimal,
+        @ColumnInfo(name = "tx_count") val transactionCount: Int
+    )
+
+    data class AmountStats(
+        @ColumnInfo(name = "avg_amount") val avgAmount: java.math.BigDecimal?,
+        @ColumnInfo(name = "stddev_amount") val stddevAmount: java.math.BigDecimal?
+    )
+
+    /** Daily spending totals: SUM + COUNT grouped by date */
+    @Query("""
+        SELECT DATE(date_time) as date,
+               SUM(amount) as total_amount,
+               COUNT(*) as tx_count
+        FROM transactions
+        WHERE is_deleted = 0
+        AND date_time BETWEEN :startDate AND :endDate
+        AND currency = :currency
+        AND (:transactionType IS NULL OR transaction_type = :transactionType)
+        GROUP BY DATE(date_time)
+        ORDER BY DATE(date_time) ASC
+    """)
+    suspend fun getDailyTotalsInRange(
+        startDate: LocalDateTime,
+        endDate: LocalDateTime,
+        currency: String,
+        transactionType: TransactionType?
+    ): List<DailyTotal>
+
+    /** Weekly spending totals grouped by ISO week start (Monday) */
+    @Query("""
+        SELECT DATE(date_time, 'weekday 0', '-6 days') as week_start,
+               SUM(amount) as total_amount,
+               COUNT(*) as tx_count
+        FROM transactions
+        WHERE is_deleted = 0
+        AND date_time BETWEEN :startDate AND :endDate
+        AND currency = :currency
+        AND (:transactionType IS NULL OR transaction_type = :transactionType)
+        GROUP BY DATE(date_time, 'weekday 0', '-6 days')
+        ORDER BY week_start ASC
+    """)
+    suspend fun getWeeklyTotalsInRange(
+        startDate: LocalDateTime,
+        endDate: LocalDateTime,
+        currency: String,
+        transactionType: TransactionType?
+    ): List<WeeklyTotal>
+
+    /** Monthly income/expenses/totals grouped by YYYY-MM */
+    @Query("""
+        SELECT STRFTIME('%Y-%m', date_time) as year_month,
+               SUM(amount) as total_amount,
+               SUM(CASE WHEN transaction_type = 'INCOME' THEN amount ELSE 0 END) as income,
+               SUM(CASE WHEN transaction_type = 'EXPENSE' THEN amount ELSE 0 END) as expenses,
+               COUNT(*) as tx_count
+        FROM transactions
+        WHERE is_deleted = 0
+        AND date_time BETWEEN :startDate AND :endDate
+        AND currency = :currency
+        AND (:transactionType IS NULL OR transaction_type = :transactionType)
+        GROUP BY STRFTIME('%Y-%m', date_time)
+        ORDER BY year_month ASC
+    """)
+    suspend fun getMonthlyTotalsInRange(
+        startDate: LocalDateTime,
+        endDate: LocalDateTime,
+        currency: String,
+        transactionType: TransactionType?
+    ): List<MonthlyTotal>
+
+    /** Category breakdown for a date range */
+    @Query("""
+        SELECT COALESCE(category, 'Others') as category,
+               SUM(amount) as total_amount,
+               COUNT(*) as tx_count
+        FROM transactions
+        WHERE is_deleted = 0
+        AND date_time BETWEEN :startDate AND :endDate
+        AND currency = :currency
+        AND (:transactionType IS NULL OR transaction_type = :transactionType)
+        GROUP BY category
+        ORDER BY total_amount DESC
+    """)
+    suspend fun getCategoryTotalsInRange(
+        startDate: LocalDateTime,
+        endDate: LocalDateTime,
+        currency: String,
+        transactionType: TransactionType?
+    ): List<CategoryTotal>
+
+    /** Spending distribution by day of week (0=Sun, 6=Sat) */
+    @Query("""
+        SELECT CAST(STRFTIME('%w', date_time) AS INTEGER) as day_of_week,
+               SUM(amount) as total_amount,
+               COUNT(*) as tx_count
+        FROM transactions
+        WHERE is_deleted = 0
+        AND date_time BETWEEN :startDate AND :endDate
+        AND currency = :currency
+        AND (:transactionType IS NULL OR transaction_type = :transactionType)
+        GROUP BY day_of_week
+        ORDER BY day_of_week ASC
+    """)
+    suspend fun getWeekdayDistribution(
+        startDate: LocalDateTime,
+        endDate: LocalDateTime,
+        currency: String,
+        transactionType: TransactionType?
+    ): List<WeekdayDistribution>
+
+    /** Spending distribution by day of month (1-31) */
+    @Query("""
+        SELECT CAST(STRFTIME('%d', date_time) AS INTEGER) as day_of_month,
+               SUM(amount) as total_amount,
+               COUNT(*) as tx_count
+        FROM transactions
+        WHERE is_deleted = 0
+        AND date_time BETWEEN :startDate AND :endDate
+        AND currency = :currency
+        AND (:transactionType IS NULL OR transaction_type = :transactionType)
+        GROUP BY day_of_month
+        ORDER BY day_of_month ASC
+    """)
+    suspend fun getDayOfMonthDistribution(
+        startDate: LocalDateTime,
+        endDate: LocalDateTime,
+        currency: String,
+        transactionType: TransactionType?
+    ): List<DayOfMonthDistribution>
+
+    /** Average and standard deviation of transaction amounts for anomaly detection */
+    @Query("""
+        SELECT AVG(amount) as avg_amount,
+               STDEV(amount) as stddev_amount
+        FROM transactions
+        WHERE is_deleted = 0
+        AND date_time BETWEEN :startDate AND :endDate
+        AND currency = :currency
+        AND (:transactionType IS NULL OR transaction_type = :transactionType)
+    """)
+    suspend fun getAmountStats(
+        startDate: LocalDateTime,
+        endDate: LocalDateTime,
+        currency: String,
+        transactionType: TransactionType?
+    ): AmountStats?
 }
