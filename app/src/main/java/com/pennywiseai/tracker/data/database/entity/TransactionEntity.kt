@@ -33,6 +33,9 @@ data class TransactionEntity(
     
     @ColumnInfo(name = "description")
     val description: String? = null,
+
+    @ColumnInfo(name = "note")
+    val note: String? = null,
     
     @ColumnInfo(name = "sms_body")
     val smsBody: String? = null,

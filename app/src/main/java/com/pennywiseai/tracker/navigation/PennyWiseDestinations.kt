@@ -28,7 +28,7 @@ object Analytics
 object Chat
 
 @Serializable
-data class TransactionDetail(val transactionId: Long)
+data class TransactionDetail(val transactionId: Long, val promptNote: Boolean = false)
 
 @Serializable
 object AddTransaction

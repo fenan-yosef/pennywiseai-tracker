@@ -119,6 +119,7 @@ fun PennyWiseNavHost(
             val transactionDetail = backStackEntry.toRoute<TransactionDetail>()
             com.pennywiseai.tracker.presentation.transactions.TransactionDetailScreen(
                 transactionId = transactionDetail.transactionId,
+                promptNote = transactionDetail.promptNote,
                 onNavigateBack = {
                     onEditComplete()
                     navController.popBackStack()

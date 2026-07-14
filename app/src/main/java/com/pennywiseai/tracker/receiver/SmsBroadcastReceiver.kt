@@ -39,6 +39,7 @@ class SmsBroadcastReceiver : BroadcastReceiver() {
         private const val TAG = "SmsBroadcastReceiver"
         const val ACTION_EDIT_TRANSACTION = "com.pennywiseai.tracker.ACTION_EDIT_TRANSACTION"
         const val EXTRA_TRANSACTION_ID = "transaction_id"
+        const val EXTRA_PROMPT_NOTE = "prompt_note"
         const val CHANNEL_ID = "transaction_notifications"
         const val CHANNEL_NAME = "Transaction Notifications"
     }
@@ -178,6 +179,7 @@ class SmsBroadcastReceiver : BroadcastReceiver() {
                 val intent = Intent(context, MainActivity::class.java).apply {
                     action = ACTION_EDIT_TRANSACTION
                     putExtra(EXTRA_TRANSACTION_ID, transactionId)
+                    putExtra(EXTRA_PROMPT_NOTE, true)
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
                 }
 

@@ -29,6 +29,7 @@ fun PennyWiseApp(
     themeViewModel: ThemeViewModel = hiltViewModel(),
     appLockViewModel: AppLockViewModel = hiltViewModel(),
     editTransactionId: Long? = null,
+    editTransactionPromptNote: Boolean = false,
     onEditComplete: () -> Unit = {}
 ) {
     val themeUiState by themeViewModel.themeUiState.collectAsStateWithLifecycle()
@@ -84,9 +85,14 @@ fun PennyWiseApp(
     }
     
     // Navigate to transaction detail when editTransactionId changes
-    LaunchedEffect(editTransactionId) {
+    LaunchedEffect(editTransactionId, editTransactionPromptNote) {
         editTransactionId?.let { transactionId ->
-            navController.navigate(com.pennywiseai.tracker.navigation.TransactionDetail(transactionId))
+            navController.navigate(
+                com.pennywiseai.tracker.navigation.TransactionDetail(
+                    transactionId = transactionId,
+                    promptNote = editTransactionPromptNote
+                )
+            )
         }
     }
 

@@ -52,6 +52,7 @@ import java.time.format.DateTimeFormatter
 @Composable
 fun TransactionDetailScreen(
     transactionId: Long,
+    promptNote: Boolean = false,
     onNavigateBack: () -> Unit,
     viewModel: TransactionDetailViewModel = hiltViewModel()
 ) {
@@ -72,6 +73,9 @@ fun TransactionDetailScreen(
     
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    var showNotePrompt by remember { mutableStateOf(promptNote) }
+    var noteInput by remember { mutableStateOf("") }
+    var savingNote by remember { mutableStateOf(false) }
     
     // Show success snackbar
     LaunchedEffect(saveSuccess) {
@@ -94,6 +98,14 @@ fun TransactionDetailScreen(
     
     LaunchedEffect(transactionId) {
         viewModel.loadTransaction(transactionId)
+    }
+
+    LaunchedEffect(transaction?.id, promptNote) {
+        val txn = transaction
+        if (promptNote && txn != null) {
+            showNotePrompt = true
+            noteInput = txn.note.orEmpty()
+        }
     }
     
     // Handle delete success
@@ -242,6 +254,65 @@ fun TransactionDetailScreen(
             }
         )
     }
+
+    if (showNotePrompt && transaction != null) {
+        NotePromptDialog(
+            note = noteInput,
+            onNoteChange = { noteInput = it },
+            onSave = {
+                savingNote = true
+                scope.launch {
+                    viewModel.saveNote(noteInput)
+                    savingNote = false
+                    showNotePrompt = false
+                }
+            },
+            onSkip = {
+                showNotePrompt = false
+            },
+            isSaving = savingNote || isSaving
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun NotePromptDialog(
+    note: String,
+    onNoteChange: (String) -> Unit,
+    onSave: () -> Unit,
+    onSkip: () -> Unit,
+    isSaving: Boolean
+) {
+    AlertDialog(
+        onDismissRequest = onSkip,
+        title = { Text("Add a note?") },
+        text = {
+            OutlinedTextField(
+                value = note,
+                onValueChange = onNoteChange,
+                label = { Text("Reason / note (optional)") },
+                placeholder = { Text("e.g., Dinner with friends") },
+                singleLine = false,
+                maxLines = 3,
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onSave, enabled = !isSaving) {
+                if (isSaving) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                } else {
+                    Text("Save note")
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onSkip, enabled = !isSaving) {
+                Text("Skip")
+            }
+        }
+    )
 }
 
 @Composable
@@ -499,6 +570,14 @@ private fun ExtractedInfoCard(transaction: TransactionEntity) {
                     label = "Description",
                     value = it,
                     icon = Icons.Default.Description
+                )
+            }
+
+            transaction.note?.let {
+                InfoRow(
+                    label = "Note",
+                    value = it,
+                    icon = Icons.Default.NoteAdd
                 )
             }
             
@@ -866,6 +945,23 @@ private fun EditableExtractedInfoCard(
                 maxLines = 2
             )
             
+            Spacer(modifier = Modifier.height(Spacing.sm))
+
+            OutlinedTextField(
+                value = transaction.note ?: "",
+                onValueChange = { viewModel.updateNote(it) },
+                label = { Text("Note (Optional)") },
+                leadingIcon = {
+                    Icon(
+                        Icons.Default.NoteAdd,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp)
+                    )
+                },
+                modifier = Modifier.fillMaxWidth(),
+                maxLines = 2
+            )
+
             Spacer(modifier = Modifier.height(Spacing.sm))
             
             // Account Number

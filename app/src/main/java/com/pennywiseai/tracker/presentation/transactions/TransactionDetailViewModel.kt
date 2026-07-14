@@ -238,6 +238,12 @@ class TransactionDetailViewModel @Inject constructor(
             current?.copy(description = if (description.isNullOrEmpty()) null else description)
         }
     }
+
+    fun updateNote(note: String?) {
+        _editableTransaction.update { current ->
+            current?.copy(note = note?.takeIf { it.isNotBlank() })
+        }
+    }
     
     fun updateRecurringStatus(isRecurring: Boolean) {
         _editableTransaction.update { current ->
@@ -321,6 +327,24 @@ class TransactionDetailViewModel @Inject constructor(
     
     fun cancelEdit() {
         exitEditMode()
+    }
+
+    fun saveNote(note: String?) {
+        viewModelScope.launch {
+            _isSaving.value = true
+            try {
+                _transaction.value?.let { current ->
+                    val updated = current.copy(
+                        note = note?.takeIf { it.isNotBlank() },
+                        updatedAt = LocalDateTime.now()
+                    )
+                    transactionRepository.updateTransaction(updated)
+                    _transaction.value = updated
+                }
+            } finally {
+                _isSaving.value = false
+            }
+        }
     }
     
     fun clearSaveSuccess() {

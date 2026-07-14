@@ -19,6 +19,9 @@ class MainActivity : FragmentActivity() {
     var editTransactionId by mutableStateOf<Long?>(null)
         private set
 
+    var editTransactionPromptNote by mutableStateOf(false)
+        private set
+
     override fun onCreate(savedInstanceState: Bundle?) {
         // Install splash screen before super.onCreate()
         installSplashScreen()
@@ -32,7 +35,11 @@ class MainActivity : FragmentActivity() {
         setContent {
             PennyWiseApp(
                 editTransactionId = editTransactionId,
-                onEditComplete = { editTransactionId = null }
+                editTransactionPromptNote = editTransactionPromptNote,
+                onEditComplete = {
+                    editTransactionId = null
+                    editTransactionPromptNote = false
+                }
             )
         }
     }
@@ -48,6 +55,7 @@ class MainActivity : FragmentActivity() {
             val transactionId = intent.getLongExtra(SmsBroadcastReceiver.EXTRA_TRANSACTION_ID, -1)
             if (transactionId != -1L) {
                 editTransactionId = transactionId
+                editTransactionPromptNote = intent.getBooleanExtra(SmsBroadcastReceiver.EXTRA_PROMPT_NOTE, false)
             }
         }
     }

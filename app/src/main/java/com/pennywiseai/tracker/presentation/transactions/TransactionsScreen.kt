@@ -744,6 +744,7 @@ private fun TransactionItem(
         }
         add(dateTimeText)
         if (transaction.isRecurring) add("Recurring")
+        if (!transaction.note.isNullOrBlank()) add("Note: ${transaction.note}")
     }
     
     ListItemCard(
