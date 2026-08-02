@@ -22,8 +22,30 @@ class CBEBankParser : BankParser() {
     }
 
     override fun extractAmount(message: String): BigDecimal? {
+        // Prefer the amount tied to the action so we don't pick fees / VAT / balance.
+        val actionAmountPatterns = listOf(
+            Regex(
+                """(?:credited with|debited with|transfer(?:r)?ed)\s+ETB\s*([0-9,]+(?:\.[0-9]+)?)""",
+                RegexOption.IGNORE_CASE
+            ),
+            Regex(
+                """ETB\s*([0-9,]+(?:\.[0-9]+)?)\s+(?:has been|from|to)""",
+                RegexOption.IGNORE_CASE
+            )
+        )
+        for (pattern in actionAmountPatterns) {
+            pattern.find(message)?.let { match ->
+                val amountStr = match.groupValues[1].replace(",", "")
+                return try {
+                    BigDecimal(amountStr)
+                } catch (e: NumberFormatException) {
+                    null
+                }
+            }
+        }
+
         val pattern = Regex(
-            """ETB\s*([0-9,]+(?:\.[0-9]{2})?)""",
+            """ETB\s*([0-9,]+(?:\.[0-9]+)?)""",
             RegexOption.IGNORE_CASE
         )
 
@@ -106,25 +128,68 @@ class CBEBankParser : BankParser() {
     }
 
     override fun extractAccountLast4(message: String): String? {
-        // Pattern: "Account 1*********9388" - extract last 4 digits
-        val accountPattern = Regex("""Account\s+\d?\*+(\d{4})""", RegexOption.IGNORE_CASE)
-        accountPattern.find(message)?.let { match ->
-            return match.groupValues[1]
-        }
+        val isCredit = extractTransactionType(message) == TransactionType.INCOME
 
-        // Alternative pattern: "from your account 1*********9388"
-        val yourAccountPattern = Regex("""your account\s+\d?\*+(\d{4})""", RegexOption.IGNORE_CASE)
-        yourAccountPattern.find(message)?.let { match ->
-            return match.groupValues[1]
+        if (isCredit) {
+            // For credit/income transactions:
+            // 1. "your Account 1********0122" or "your A/c 1********0122"
+            val yourAccountPattern = Regex(
+                """your\s+(?:Account|A/c|Acct)\s+\d?\*+(\d{4})""",
+                RegexOption.IGNORE_CASE
+            )
+            yourAccountPattern.find(message)?.let { match ->
+                return match.groupValues[1]
+            }
+
+            // 2. "to your account 1********0122" or "to account 1********0122"
+            val toAccountPattern = Regex(
+                """to\s+(?:your\s+)?(?:account|a/c|acct)\s+\d?\*+(\d{4})""",
+                RegexOption.IGNORE_CASE
+            )
+            toAccountPattern.find(message)?.let { match ->
+                return match.groupValues[1]
+            }
+
+            // Do not look for general Account/A/c patterns or fall back to super
+            // because they could match the sender's account ("from account ...").
+            return null
+        } else {
+            // For debit/transfer transactions:
+            // 1. "from account 1********0122" or "from your account 1********0122"
+            val fromAccountPattern = Regex(
+                """from\s+(?:your\s+)?(?:account|a/c|acct)\s+\d?\*+(\d{4})""",
+                RegexOption.IGNORE_CASE
+            )
+            fromAccountPattern.find(message)?.let { match ->
+                return match.groupValues[1]
+            }
+
+            // 2. "your Account 1********0122"
+            val yourAccountPattern = Regex(
+                """your\s+(?:Account|A/c|Acct)\s+\d?\*+(\d{4})""",
+                RegexOption.IGNORE_CASE
+            )
+            yourAccountPattern.find(message)?.let { match ->
+                return match.groupValues[1]
+            }
+
+            // 3. General "Account 1********0122"
+            val generalAccountPattern = Regex(
+                """(?:Account|A/c|Acct)\s+\d?\*+(\d{4})""",
+                RegexOption.IGNORE_CASE
+            )
+            generalAccountPattern.find(message)?.let { match ->
+                return match.groupValues[1]
+            }
         }
 
         return super.extractAccountLast4(message)
     }
 
     override fun extractBalance(message: String): BigDecimal? {
-        // Pattern: "Your Current Balance is ETB 3,104.87" or "current balance is ETB25,800.60"
+        // Allow 1+ decimal places (CBE sometimes sends ETB9.61 or ETB 85803.6)
         val balancePattern =
-            Regex("""current balance is ETB\s*([0-9,]+(?:\.[0-9]{2})?)""", RegexOption.IGNORE_CASE)
+            Regex("""current balance is ETB\s*([0-9,]+(?:\.[0-9]+)?)""", RegexOption.IGNORE_CASE)
         balancePattern.find(message)?.let { match ->
             val balanceStr = match.groupValues[1].replace(",", "")
             return try {

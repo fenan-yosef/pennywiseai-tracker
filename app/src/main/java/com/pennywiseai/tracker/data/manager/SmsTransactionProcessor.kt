@@ -283,6 +283,27 @@ class SmsTransactionProcessor @Inject constructor(
                 }
             }
 
+            val fromSms = parsedTransaction.balance != null
+            val shouldPersist = isCreditCard ||
+                (existingAccount?.isCreditCard == true &&
+                    parsedTransaction.type.toEntityType() == TransactionType.INCOME) ||
+                BalanceUpdatePolicy.shouldPersist(
+                    existing = existingAccount,
+                    smsTimestamp = entity.dateTime,
+                    newBalance = newBalance,
+                    fromSms = fromSms,
+                    transactionAmount = parsedTransaction.amount
+                )
+
+            if (!shouldPersist) {
+                Log.d(
+                    TAG,
+                    "Skipping balance update for ${parsedTransaction.bankName} **$targetAccountLast4 " +
+                        "(stale SMS or implausible calculated balance: $newBalance vs ${existingAccount?.balance})"
+                )
+                return
+            }
+
             val balanceEntity = AccountBalanceEntity(
                 bankName = parsedTransaction.bankName,
                 accountLast4 = targetAccountLast4,

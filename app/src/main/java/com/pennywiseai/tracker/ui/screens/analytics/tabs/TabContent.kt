@@ -11,7 +11,6 @@ import com.pennywiseai.tracker.ui.screens.analytics.*
 import com.pennywiseai.tracker.ui.theme.Spacing
 import com.pennywiseai.tracker.utils.CurrencyFormatter
 import java.math.BigDecimal
-import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 
 @Composable
@@ -67,6 +66,26 @@ fun OverviewTab(
                 velocity = state.spendingVelocity,
                 currency = state.currency
             )
+        }
+
+        // 6-Month Spending Trend
+        if (state.sixMonthSpending.isNotEmpty()) {
+            item {
+                SixMonthTrendCard(
+                    monthlyData = state.sixMonthSpending,
+                    currency = state.currency
+                )
+            }
+        }
+
+        // Activity heatmap (expense / income / both)
+        if (state.heatmapDays.isNotEmpty()) {
+            item {
+                ActivityHeatmap(
+                    dailyData = state.heatmapDays,
+                    currency = state.currency
+                )
+            }
         }
 
         // Category donut
@@ -345,19 +364,6 @@ fun YearlyTab(state: AnalyticsUiState) {
                 savingsRate = state.netSavingsRate,
                 currency = state.currency
             )
-        }
-
-        // Heatmap calendar for current/selected month
-        val ym = state.dailyTrend.firstOrNull()?.date?.let { YearMonth.from(it) }
-            ?: YearMonth.now()
-        if (state.heatmapDays.isNotEmpty()) {
-            item {
-                SpendingHeatmap(
-                    dailyData = state.heatmapDays,
-                    yearMonth = ym,
-                    currency = state.currency
-                )
-            }
         }
 
         // Category donut

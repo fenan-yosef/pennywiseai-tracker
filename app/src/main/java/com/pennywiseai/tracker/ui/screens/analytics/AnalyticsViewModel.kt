@@ -46,6 +46,49 @@ class AnalyticsViewModel @Inject constructor(
     private val _selectedCurrency = MutableStateFlow("INR") // Default to INR
     val selectedCurrency: StateFlow<String> = _selectedCurrency.asStateFlow()
 
+    init {
+        viewModelScope.launch {
+            try {
+                // Get all transactions to find the primary currency and see if current month has data
+                val allTx = transactionRepository.getAllTransactions().first()
+                if (allTx.isNotEmpty()) {
+                    // 1. Determine primary currency from all transactions
+                    val mostCommonCurrency = allTx.groupBy { it.currency }
+                        .maxByOrNull { it.value.size }?.key
+                    
+                    mostCommonCurrency?.let {
+                        _selectedCurrency.value = it
+                    }
+                    
+                    // 2. Check if current month has any transactions in the database
+                    val now = LocalDate.now()
+                    val startOfMonth = now.withDayOfMonth(1)
+                    val hasCurrentMonthTx = allTx.any { 
+                        val date = it.dateTime.toLocalDate()
+                        !date.isBefore(startOfMonth) 
+                    }
+                    
+                    if (!hasCurrentMonthTx) {
+                        // Current month is empty, check if last month has transactions
+                        val startOfLastMonth = now.minusMonths(1).withDayOfMonth(1)
+                        val hasLastMonthTx = allTx.any { 
+                            val date = it.dateTime.toLocalDate()
+                            !date.isBefore(startOfLastMonth) && date.isBefore(startOfMonth)
+                        }
+                        if (hasLastMonthTx) {
+                            _selectedPeriod.value = TimePeriod.LAST_MONTH
+                        } else {
+                            // If neither, fallback to ALL
+                            _selectedPeriod.value = TimePeriod.ALL
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                // Ignore initialization failures
+            }
+        }
+    }
+
     // Store custom date range as epoch days to survive process death
     private val _customDateRangeEpochDays = savedStateHandle.getStateFlow<Pair<Long, Long>?>("customDateRange", null)
 
@@ -110,14 +153,27 @@ class AnalyticsViewModel @Inject constructor(
                     _selectedCurrency.value = if (allCurrencies.contains("INR")) "INR" else allCurrencies.first()
                 }
 
-                // Query all transactions of selected currency (filter type in memory to keep context for charts)
-                transactionRepository.getTransactionsFiltered(
-                    startDate = dateRange.first,
-                    endDate = dateRange.second,
-                    currency = filterState.currency,
-                    transactionType = null
-                )
-            }.map { currencyTransactions ->
+                // Period-scoped txns for analytics filters; separate 6-month window for
+                // activity heatmap / six-month trend (not limited by selected period).
+                val sixMonthStart = LocalDate.now().minusMonths(5).withDayOfMonth(1)
+                val sixMonthEnd = LocalDate.now()
+                combine(
+                    transactionRepository.getTransactionsFiltered(
+                        startDate = dateRange.first,
+                        endDate = dateRange.second,
+                        currency = filterState.currency,
+                        transactionType = null
+                    ),
+                    transactionRepository.getTransactionsFiltered(
+                        startDate = sixMonthStart,
+                        endDate = sixMonthEnd,
+                        currency = filterState.currency,
+                        transactionType = null
+                    )
+                ) { currencyTransactions, sixMonthTransactions ->
+                    currencyTransactions to sixMonthTransactions
+                }
+            }.map { (currencyTransactions, sixMonthTransactions) ->
                 val bankCounts = currencyTransactions
                     .groupBy { it.bankName ?: "Unknown Bank" }
                     .mapValues { it.value.size }
@@ -132,6 +188,10 @@ class AnalyticsViewModel @Inject constructor(
                 val bankFilteredTransactions = effectiveSelectedBank?.let { bank ->
                     currencyTransactions.filter { (it.bankName ?: "Unknown Bank") == bank }
                 } ?: currencyTransactions
+
+                val sixMonthBankFiltered = effectiveSelectedBank?.let { bank ->
+                    sixMonthTransactions.filter { (it.bankName ?: "Unknown Bank") == bank }
+                } ?: sixMonthTransactions
 
                 // Calculate Net Totals
                 val totalIncome = bankFilteredTransactions
@@ -262,7 +322,8 @@ class AnalyticsViewModel @Inject constructor(
                 val velocity = buildSpendingVelocity(bankFilteredTransactions, dateRange.first, dateRange.second)
                 val overview = buildOverviewData(totalIncome, totalExpenses, netSavings, averageAmount,
                     bankFilteredTransactions, categoryBreakdown, merchantBreakdown)
-                val heatmap = buildHeatmapDays(bankFilteredTransactions)
+                val heatmap = buildHeatmapDays(sixMonthBankFiltered)
+                val sixMonthSpending = buildSixMonthSpending(sixMonthBankFiltered)
 
                 AnalyticsUiState(
                     totalSpending = totalSpending,
@@ -299,7 +360,8 @@ class AnalyticsViewModel @Inject constructor(
                     bankComparison = bankComparisonList,
                     anomalousTransactions = anomalousList,
                     spendingVelocity = velocity,
-                    heatmapDays = heatmap
+                    heatmapDays = heatmap,
+                    sixMonthSpending = sixMonthSpending
                 )
             }
         }
@@ -606,8 +668,68 @@ class AnalyticsViewModel @Inject constructor(
 
     private fun buildHeatmapDays(
         transactions: List<TransactionEntity>
-    ): Map<LocalDate, BigDecimal> = transactions.groupBy { it.dateTime.toLocalDate() }
-        .mapValues { (_, txns) -> txns.sumOf { it.amount.toDouble() }.toBigDecimal() }
+    ): Map<LocalDate, HeatmapDay> {
+        val today = LocalDate.now()
+        val sixMonthsAgo = today.minusMonths(5).withDayOfMonth(1)
+        val rangeTransactions = transactions.filter {
+            !it.dateTime.toLocalDate().isBefore(sixMonthsAgo)
+        }
+        return rangeTransactions
+            .groupBy { it.dateTime.toLocalDate() }
+            .mapValues { (date, txns) ->
+                val expense = txns
+                    .filter {
+                        it.transactionType == TransactionType.EXPENSE ||
+                            it.transactionType == TransactionType.CREDIT
+                    }
+                    .sumOf { it.amount.toDouble() }
+                    .toBigDecimal()
+                val income = txns
+                    .filter { it.transactionType == TransactionType.INCOME }
+                    .sumOf { it.amount.toDouble() }
+                    .toBigDecimal()
+                val count = txns.count {
+                    it.transactionType == TransactionType.EXPENSE ||
+                        it.transactionType == TransactionType.CREDIT ||
+                        it.transactionType == TransactionType.INCOME
+                }
+                HeatmapDay(
+                    date = date,
+                    expense = expense,
+                    income = income,
+                    transactionCount = count
+                )
+            }
+            .filterValues { !it.isEmpty }
+    }
+
+    private fun buildSixMonthSpending(
+        transactions: List<TransactionEntity>
+    ): List<MonthlySpending> {
+        val today = LocalDate.now()
+        val sixMonthsAgo = today.minusMonths(5).withDayOfMonth(1)
+        val rangeTransactions = if (transactions.isNotEmpty()) {
+            // Filter existing loaded transactions to last 6 months
+            transactions.filter { !it.dateTime.toLocalDate().isBefore(sixMonthsAgo) }
+        } else {
+            emptyList()
+        }
+
+        // Build complete 6-month series including months with zero spending
+        return (0 until 6).map { offset ->
+            val ym = YearMonth.from(sixMonthsAgo.plusMonths(offset.toLong()))
+            val monthTxns = rangeTransactions.filter { YearMonth.from(it.dateTime) == ym }
+            MonthlySpending(
+                yearMonth = ym,
+                amount = monthTxns.sumOf { it.amount.toDouble() }.toBigDecimal(),
+                income = monthTxns.filter { it.transactionType == TransactionType.INCOME }
+                    .sumOf { it.amount.toDouble() }.toBigDecimal(),
+                expenses = monthTxns.filter { it.transactionType == TransactionType.EXPENSE }
+                    .sumOf { it.amount.toDouble() }.toBigDecimal(),
+                transactionCount = monthTxns.size
+            )
+        }
+    }
 }
 
 private data class FilterState(

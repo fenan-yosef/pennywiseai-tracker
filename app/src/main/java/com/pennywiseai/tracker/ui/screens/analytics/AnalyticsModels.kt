@@ -59,7 +59,8 @@ data class AnalyticsUiState(
     val bankComparison: List<BankSummary> = emptyList(),
     val anomalousTransactions: List<AnomalousTransaction> = emptyList(),
     val spendingVelocity: SpendingVelocity = SpendingVelocity(),
-    val heatmapDays: Map<LocalDate, BigDecimal> = emptyMap()
+    val heatmapDays: Map<LocalDate, HeatmapDay> = emptyMap(),
+    val sixMonthSpending: List<MonthlySpending> = emptyList()
 )
 
 // ==================== Base Models (existing, preserved) ====================
@@ -221,22 +222,15 @@ data class SpendingVelocity(
 
 // ==================== Heatmap ====================
 
-/** Day cell for calendar heatmap */
+/** Day cell for activity heatmap (expense / income / both) */
 data class HeatmapDay(
     val date: LocalDate,
-    val amount: BigDecimal = BigDecimal.ZERO,
-    val transactionCount: Int = 0,
-    val intensity: Float = 0f // 0f..1f normalized within the visible range
-)
-
-/** Full heatmap data for a year/month range */
-data class HeatmapData(
-    val year: Int,
-    val months: List<HeatmapMonth>,
-    val maxDailyAmount: BigDecimal = BigDecimal.ZERO
-)
-
-data class HeatmapMonth(
-    val month: java.time.Month,
-    val days: List<HeatmapDay>
-)
+    val expense: BigDecimal = BigDecimal.ZERO,
+    val income: BigDecimal = BigDecimal.ZERO,
+    val transactionCount: Int = 0
+) {
+    val hasExpense: Boolean get() = expense > BigDecimal.ZERO
+    val hasIncome: Boolean get() = income > BigDecimal.ZERO
+    val isEmpty: Boolean get() = !hasExpense && !hasIncome
+    val net: BigDecimal get() = income - expense
+}

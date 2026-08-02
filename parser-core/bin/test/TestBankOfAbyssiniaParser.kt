@@ -32,4 +32,17 @@ class TestBankOfAbyssiniaParser {
         assertEquals("3000.00", parsed?.amount?.toPlainString())
         assertEquals("CHIRSTIAN TESFAYE KASSAHUN", parsed?.merchant)
     }
+
+    @Test
+    fun testUserReportedDebitMessage() {
+        val sms = "Dear Fenan, your account 1*****49 was debited with ETB 300.00. Available Balance: ETB 21,753.78. Receipt: https://cs.bankofabyssinia.com/slip/?trx=FT261954NRZH99449 Feedback: https://cs.bankofabyssinia.com/cs/?trx=DFT261954NRZH Link your Fayda: https://cs.bankofabyssinia.com/fayda_connect For help, call 8397 (24/7 Toll-Free). Bank of Abyssinia."
+        val parsed = parser.parse(sms, "BOA", System.currentTimeMillis())
+        assertNotNull(parsed, "Parser should return a ParsedTransaction for debit message")
+        assertEquals("ETB", parsed?.currency)
+        assertEquals("Bank of Abyssinia", parsed?.bankName)
+        assertEquals("FT261954NRZH99449", parsed?.reference)
+        assertEquals("21753.78", parsed?.balance?.toPlainString())
+        assertEquals("300.00", parsed?.amount?.toPlainString())
+        assertEquals("49", parsed?.accountLast4)
+    }
 }

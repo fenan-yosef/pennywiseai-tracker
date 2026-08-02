@@ -18,6 +18,7 @@ import com.pennywiseai.parser.core.bank.IndusIndBankParser
 import com.pennywiseai.tracker.data.database.entity.AccountBalanceEntity
 import com.pennywiseai.tracker.data.database.entity.TransactionType
 import com.pennywiseai.tracker.data.database.entity.UnrecognizedSmsEntity
+import com.pennywiseai.tracker.data.manager.BalanceUpdatePolicy
 import com.pennywiseai.tracker.data.mapper.toEntity
 import com.pennywiseai.tracker.data.mapper.toEntityType
 import com.pennywiseai.tracker.data.preferences.UserPreferencesRepository
@@ -1271,6 +1272,27 @@ private suspend fun processBalanceUpdate(
                 existingAccount?.isCreditCard == true && parsedTransaction.type.toEntityType() == TransactionType.INCOME -> "Calculated (CC Payment)"
                 parsedTransaction.balance != null -> "From SMS"
                 else -> "Calculated (${parsedTransaction.type.toEntityType()})"
+            }
+
+            val fromSms = parsedTransaction.balance != null
+            val shouldPersist = isCreditCard ||
+                (existingAccount?.isCreditCard == true &&
+                    parsedTransaction.type.toEntityType() == TransactionType.INCOME) ||
+                BalanceUpdatePolicy.shouldPersist(
+                    existing = existingAccount,
+                    smsTimestamp = entity.dateTime,
+                    newBalance = newBalance,
+                    fromSms = fromSms,
+                    transactionAmount = parsedTransaction.amount
+                )
+
+            if (!shouldPersist) {
+                Log.d(
+                    TAG,
+                    "Skipping balance update for ${parsedTransaction.bankName} **$targetAccountLast4 " +
+                        "(stale SMS or implausible calculated balance: $newBalance vs ${existingAccount?.balance})"
+                )
+                return
             }
 
             Log.d(
