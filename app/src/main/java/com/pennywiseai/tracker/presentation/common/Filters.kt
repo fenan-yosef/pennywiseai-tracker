@@ -7,9 +7,13 @@ enum class TimePeriod(val label: String) {
     TODAY("Today"),
     YESTERDAY("Yesterday"),
     THIS_WEEK("This Week"),
+    LAST_WEEK("Last Week"),
     LAST_7_DAYS("Last 7 Days"),
+    LAST_30_DAYS("Last 30 Days"),
     THIS_MONTH("This Month"),
     LAST_MONTH("Last Month"),
+    LAST_3_MONTHS("Last 3 Months"),
+    LAST_6_MONTHS("Last 6 Months"),
     THIS_QUARTER("This Quarter"),
     LAST_QUARTER("Last Quarter"),
     CURRENT_FY("Current FY"),
@@ -36,7 +40,12 @@ fun getDateRangeForPeriod(period: TimePeriod): Pair<LocalDate, LocalDate>? {
             val monday = today.minusDays((today.dayOfWeek.value - 1).toLong())
             monday to today
         }
+        TimePeriod.LAST_WEEK -> {
+            val monday = today.minusDays((today.dayOfWeek.value - 1).toLong())
+            monday.minusDays(7) to monday.minusDays(1)
+        }
         TimePeriod.LAST_7_DAYS -> today.minusDays(6) to today
+        TimePeriod.LAST_30_DAYS -> today.minusDays(29) to today
         TimePeriod.THIS_MONTH -> {
             val start = YearMonth.now().atDay(1)
             start to today
@@ -46,6 +55,14 @@ fun getDateRangeForPeriod(period: TimePeriod): Pair<LocalDate, LocalDate>? {
             val start = lastMonth.atDay(1)
             val end = lastMonth.atEndOfMonth()
             start to end
+        }
+        TimePeriod.LAST_3_MONTHS -> {
+            val start = today.minusMonths(3)
+            start to today
+        }
+        TimePeriod.LAST_6_MONTHS -> {
+            val start = today.minusMonths(6)
+            start to today
         }
         TimePeriod.THIS_QUARTER -> {
             val currentQuarterStartMonth = ((today.monthValue - 1) / 3) * 3 + 1

@@ -198,6 +198,47 @@ class TransactionsViewModel @Inject constructor(
     }
     
     init {
+        viewModelScope.launch {
+            try {
+                // Get all transactions to find the primary currency and see if current month has data
+                val allTx = transactionRepository.getAllTransactions().first()
+                if (allTx.isNotEmpty()) {
+                    // 1. Determine primary currency from all transactions
+                    val mostCommonCurrency = allTx.groupBy { it.currency }
+                        .maxByOrNull { it.value.size }?.key
+                    
+                    mostCommonCurrency?.let {
+                        _selectedCurrency.value = it
+                    }
+                    
+                    // 2. Check if current month has any transactions in the database
+                    val now = LocalDate.now()
+                    val startOfMonth = now.withDayOfMonth(1)
+                    val hasCurrentMonthTx = allTx.any { 
+                        val date = it.dateTime.toLocalDate()
+                        !date.isBefore(startOfMonth) 
+                    }
+                    
+                    if (!hasCurrentMonthTx) {
+                        // Current month is empty, check if last month has transactions
+                        val startOfLastMonth = now.minusMonths(1).withDayOfMonth(1)
+                        val hasLastMonthTx = allTx.any { 
+                            val date = it.dateTime.toLocalDate()
+                            !date.isBefore(startOfLastMonth) && date.isBefore(startOfMonth)
+                        }
+                        if (hasLastMonthTx) {
+                            _selectedPeriod.value = TimePeriod.LAST_MONTH
+                        } else {
+                            // If neither, fallback to ALL
+                            _selectedPeriod.value = TimePeriod.ALL
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                // Ignore initialization failures
+            }
+        }
+
         // Manually combine all flows using transformLatest
         merge(
             searchQuery.debounce(300).map { "search" },

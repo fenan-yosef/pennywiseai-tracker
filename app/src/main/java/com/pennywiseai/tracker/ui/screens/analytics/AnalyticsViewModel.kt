@@ -328,6 +328,7 @@ class AnalyticsViewModel @Inject constructor(
                 AnalyticsUiState(
                     totalSpending = totalSpending,
                     totalIncome = totalIncome,
+                    totalExpense = totalExpenses,
                     netSavings = netSavings,
                     netSavingsRate = netSavingsRate,
                     categoryBreakdown = categoryBreakdown,
@@ -387,7 +388,45 @@ class AnalyticsViewModel @Inject constructor(
         _selectedBank.value = bank
     }
 
-    fun selectTab(tab: AnalyticsTab) { _activeTab.value = tab }
+    fun selectTab(tab: AnalyticsTab) {
+        _activeTab.value = tab
+        val currentPeriod = _selectedPeriod.value
+        when (tab) {
+            AnalyticsTab.DAILY -> {
+                val allowedDaily = listOf(
+                    TimePeriod.TODAY,
+                    TimePeriod.YESTERDAY,
+                    TimePeriod.THIS_WEEK,
+                    TimePeriod.LAST_WEEK,
+                    TimePeriod.LAST_7_DAYS,
+                    TimePeriod.LAST_30_DAYS,
+                    TimePeriod.THIS_MONTH,
+                    TimePeriod.LAST_MONTH,
+                    TimePeriod.CUSTOM
+                )
+                if (currentPeriod !in allowedDaily) {
+                    _selectedPeriod.value = TimePeriod.LAST_30_DAYS
+                }
+            }
+            AnalyticsTab.TRENDS -> {
+                val allowedTrends = listOf(
+                    TimePeriod.LAST_MONTH,
+                    TimePeriod.LAST_3_MONTHS,
+                    TimePeriod.LAST_6_MONTHS,
+                    TimePeriod.THIS_QUARTER,
+                    TimePeriod.LAST_QUARTER,
+                    TimePeriod.CURRENT_FY,
+                    TimePeriod.LAST_YEAR,
+                    TimePeriod.ALL,
+                    TimePeriod.CUSTOM
+                )
+                if (currentPeriod !in allowedTrends) {
+                    _selectedPeriod.value = TimePeriod.LAST_3_MONTHS
+                }
+            }
+            else -> {}
+        }
+    }
 
     fun setCustomDateRange(startDate: LocalDate, endDate: LocalDate) {
         require(startDate <= endDate) {

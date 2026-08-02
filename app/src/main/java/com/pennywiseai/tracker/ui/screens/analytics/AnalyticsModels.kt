@@ -11,11 +11,7 @@ import java.time.YearMonth
 enum class AnalyticsTab(val label: String) {
     OVERVIEW("Overview"),
     DAILY("Daily"),
-    WEEKLY("Weekly"),
-    MONTHLY("Monthly"),
-    QUARTERLY("Quarterly"),
-    YEARLY("Yearly"),
-    CUSTOM("Custom")
+    TRENDS("Trends")
 }
 
 // ==================== Core UI State ====================
@@ -23,6 +19,7 @@ enum class AnalyticsTab(val label: String) {
 data class AnalyticsUiState(
     val totalSpending: BigDecimal = BigDecimal.ZERO,
     val totalIncome: BigDecimal = BigDecimal.ZERO,
+    val totalExpense: BigDecimal = BigDecimal.ZERO,
     val netSavings: BigDecimal = BigDecimal.ZERO,
     val categoryBreakdown: List<CategoryData> = emptyList(),
     val topMerchants: List<MerchantData> = emptyList(),

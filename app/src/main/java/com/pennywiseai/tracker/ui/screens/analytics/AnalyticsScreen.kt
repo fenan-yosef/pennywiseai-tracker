@@ -49,32 +49,7 @@ fun AnalyticsScreen(
     val tabs = remember { AnalyticsTab.entries }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // Period Selector
-        LazyRow(
-            modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface),
-            contentPadding = PaddingValues(horizontal = Dimensions.Padding.content, vertical = Spacing.sm),
-            horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
-        ) {
-            items(timePeriods) { period ->
-                FilterChip(
-                    selected = if (period == TimePeriod.CUSTOM) selectedPeriod == period && customDateRange != null
-                    else selectedPeriod == period,
-                    onClick = {
-                        if (period == TimePeriod.CUSTOM) showDateRangePicker = true
-                        else viewModel.selectPeriod(period)
-                    },
-                    label = {
-                        Text(if (period == TimePeriod.CUSTOM && customRangeLabel != null) customRangeLabel else period.label)
-                    },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                )
-            }
-        }
-
-        // Bank Tabs
+        // Bank Tabs (now thin and elegant at the very top of filters)
         if (uiState.banks.isNotEmpty()) {
             AnalyticsBankTabs(
                 banks = uiState.banks, selectedBank = selectedBank,
@@ -85,7 +60,7 @@ fun AnalyticsScreen(
         // Currency + Type Filters Row
         Row(
             modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface)
-                .padding(horizontal = Dimensions.Padding.content).padding(bottom = Spacing.sm),
+                .padding(horizontal = Dimensions.Padding.content, vertical = Spacing.sm),
             horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -126,9 +101,9 @@ fun AnalyticsScreen(
             }
         }
 
-        // Tab Row
-        ScrollableTabRow(
-            selectedTabIndex = tabs.indexOf(activeTab).coerceAtLeast(0), edgePadding = 8.dp,
+        // Tab Row (Fill width since there are only 3 tabs now)
+        TabRow(
+            selectedTabIndex = tabs.indexOf(activeTab).coerceAtLeast(0),
             modifier = Modifier.background(MaterialTheme.colorScheme.surface)
         ) {
             tabs.forEach { tab ->
@@ -149,19 +124,27 @@ fun AnalyticsScreen(
                     when (activeTab) {
                         AnalyticsTab.OVERVIEW -> OverviewTab(
                             state = uiState,
+                            selectedPeriod = selectedPeriod,
+                            customDateRange = customDateRange,
+                            onPeriodSelected = { viewModel.selectPeriod(it) },
+                            onCustomRangeClick = { showDateRangePicker = true },
                             onCategoryClick = { onNavigateToTransactions(it.name, null, selectedPeriod.name, selectedCurrency) },
                             onMerchantClick = { onNavigateToTransactions(null, it.name, selectedPeriod.name, selectedCurrency) }
                         )
-                        AnalyticsTab.DAILY -> DailyTab(state = uiState)
-                        AnalyticsTab.WEEKLY -> WeeklyTab(state = uiState)
-                        AnalyticsTab.MONTHLY -> MonthlyTab(
+                        AnalyticsTab.DAILY -> DailyTab(
                             state = uiState,
-                            onCategoryClick = { onNavigateToTransactions(it.name, null, selectedPeriod.name, selectedCurrency) },
-                            onMerchantClick = { onNavigateToTransactions(null, it.name, selectedPeriod.name, selectedCurrency) }
+                            selectedPeriod = selectedPeriod,
+                            customDateRange = customDateRange,
+                            onPeriodSelected = { viewModel.selectPeriod(it) },
+                            onCustomRangeClick = { showDateRangePicker = true }
                         )
-                        AnalyticsTab.QUARTERLY -> QuarterlyTab(state = uiState)
-                        AnalyticsTab.YEARLY -> YearlyTab(state = uiState)
-                        AnalyticsTab.CUSTOM -> CustomTab(state = uiState)
+                        AnalyticsTab.TRENDS -> TrendsTab(
+                            state = uiState,
+                            selectedPeriod = selectedPeriod,
+                            customDateRange = customDateRange,
+                            onPeriodSelected = { viewModel.selectPeriod(it) },
+                            onCustomRangeClick = { showDateRangePicker = true }
+                        )
                     }
                 }
             }
@@ -267,9 +250,5 @@ private fun typeFilterIcon(filter: TransactionTypeFilter) = when (filter) {
 private fun tabIcon(tab: AnalyticsTab) = when (tab) {
     AnalyticsTab.OVERVIEW -> Icons.Default.Home
     AnalyticsTab.DAILY -> Icons.Default.CalendarViewDay
-    AnalyticsTab.WEEKLY -> Icons.Default.DateRange
-    AnalyticsTab.MONTHLY -> Icons.Default.CalendarMonth
-    AnalyticsTab.QUARTERLY -> Icons.Default.ViewTimeline
-    AnalyticsTab.YEARLY -> Icons.Default.EventNote
-    AnalyticsTab.CUSTOM -> Icons.Default.Tune
+    AnalyticsTab.TRENDS -> Icons.AutoMirrored.Filled.TrendingUp
 }
