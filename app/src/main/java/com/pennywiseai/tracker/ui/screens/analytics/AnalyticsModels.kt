@@ -9,8 +9,7 @@ import java.time.YearMonth
 // ==================== Tab & Filter State ====================
 
 enum class AnalyticsTab(val label: String) {
-    OVERVIEW("Overview"),
-    DAILY("Daily"),
+    SNAPSHOT("Snapshot"),
     TRENDS("Trends")
 }
 
@@ -35,16 +34,13 @@ data class AnalyticsUiState(
     val banks: List<String> = emptyList(),
     val selectedBank: String? = null,
     val bankTransactionCounts: Map<String, Int> = emptyMap(),
-    // Existing extra fields
     val netSavingsRate: Float = 0f,
     val weekdaySpending: BigDecimal = BigDecimal.ZERO,
     val weekendSpending: BigDecimal = BigDecimal.ZERO,
     val dayOfWeekDistribution: Map<DayOfWeek, BigDecimal> = emptyMap(),
     val transactionScaleCount: Map<String, Int> = emptyMap(),
     val projectedSpending: BigDecimal = BigDecimal.ZERO,
-    // New fields
-    val activeTab: AnalyticsTab = AnalyticsTab.OVERVIEW,
-    val overviewData: OverviewData = OverviewData(),
+    val activeTab: AnalyticsTab = AnalyticsTab.SNAPSHOT,
     val dailyTrend: List<DailySpending> = emptyList(),
     val weeklyBreakdown: List<WeeklySpending> = emptyList(),
     val monthlyBreakdown: List<MonthlySpending> = emptyList(),
@@ -57,10 +53,18 @@ data class AnalyticsUiState(
     val anomalousTransactions: List<AnomalousTransaction> = emptyList(),
     val spendingVelocity: SpendingVelocity = SpendingVelocity(),
     val heatmapDays: Map<LocalDate, HeatmapDay> = emptyMap(),
-    val sixMonthSpending: List<MonthlySpending> = emptyList()
+    val sixMonthSpending: List<MonthlySpending> = emptyList(),
+    /** Hero: today's amount for the active type filter */
+    val todayAmount: BigDecimal = BigDecimal.ZERO,
+    /** Hero: filtered period total (respects type filter) */
+    val periodTotal: BigDecimal = BigDecimal.ZERO,
+    /** Hero: % change vs previous equal-length period (null if unavailable) */
+    val spendingChangePercent: Float? = null,
+    /** Hero: ahead of pace (>0), behind (<0), or on pace (~0); only for This Month */
+    val pacePercent: Float? = null
 )
 
-// ==================== Base Models (existing, preserved) ====================
+// ==================== Base Models ====================
 
 data class CategoryData(
     val name: String,
@@ -104,22 +108,7 @@ data class TrendPoint(
     val amount: BigDecimal
 )
 
-// ==================== New Insight Models ====================
-
-/** Overview tab header data: income vs expense + net */
-data class OverviewData(
-    val totalIncome: BigDecimal = BigDecimal.ZERO,
-    val totalExpense: BigDecimal = BigDecimal.ZERO,
-    val netSavings: BigDecimal = BigDecimal.ZERO,
-    val savingsRate: Float = 0f,
-    val transactionCount: Int = 0,
-    val avgPerTransaction: BigDecimal = BigDecimal.ZERO,
-    val topCategory: String = "",
-    val topCategoryAmount: BigDecimal = BigDecimal.ZERO,
-    val topCategoryPercent: Float = 0f,
-    val topMerchant: String = "",
-    val topMerchantAmount: BigDecimal = BigDecimal.ZERO
-)
+// ==================== Insight Models ====================
 
 /** Single day's spending for bar/line charts */
 data class DailySpending(
