@@ -9,6 +9,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import androidx.datastore.preferences.core.floatPreferencesKey
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -35,6 +36,8 @@ class UserPreferencesRepository @Inject constructor(
         val LAST_SCAN_TIMESTAMP = longPreferencesKey("last_scan_timestamp")
         val LAST_SCAN_PERIOD = intPreferencesKey("last_scan_period")
         val BASE_CURRENCY = stringPreferencesKey("base_currency")
+        val BUDGET_LIMIT = floatPreferencesKey("budget_limit")
+        val BUDGET_BANK = stringPreferencesKey("budget_bank")
 
         // App Lock preferences
         val APP_LOCK_ENABLED = booleanPreferencesKey("app_lock_enabled")
@@ -61,7 +64,9 @@ class UserPreferencesRepository @Inject constructor(
                 hasShownScanTutorial = preferences[PreferencesKeys.HAS_SHOWN_SCAN_TUTORIAL] ?: false,
                 smsScanMonths = preferences[PreferencesKeys.SMS_SCAN_MONTHS] ?: 3, // Default to 3 months
                 smsScanAllTime = preferences[PreferencesKeys.SMS_SCAN_ALL_TIME] ?: false, // Default to false
-                baseCurrency = preferences[PreferencesKeys.BASE_CURRENCY] ?: "INR" // Default to INR
+                baseCurrency = preferences[PreferencesKeys.BASE_CURRENCY] ?: "INR", // Default to INR
+                budgetLimit = preferences[PreferencesKeys.BUDGET_LIMIT] ?: 0.0f,
+                budgetBank = preferences[PreferencesKeys.BUDGET_BANK]
             )
         }
 
@@ -354,6 +359,27 @@ class UserPreferencesRepository @Inject constructor(
         .map { preferences ->
             preferences[PreferencesKeys.LAST_AUTH_TIMESTAMP] ?: 0L
         }
+
+    val budgetLimit: Flow<Float> = context.dataStore.data
+        .map { preferences ->
+            preferences[PreferencesKeys.BUDGET_LIMIT] ?: 0.0f
+        }
+
+    val budgetBank: Flow<String?> = context.dataStore.data
+        .map { preferences ->
+            preferences[PreferencesKeys.BUDGET_BANK]
+        }
+
+    suspend fun updateBudgetSettings(limit: Float, bank: String?) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.BUDGET_LIMIT] = limit
+            if (bank == null) {
+                preferences.remove(PreferencesKeys.BUDGET_BANK)
+            } else {
+                preferences[PreferencesKeys.BUDGET_BANK] = bank
+            }
+        }
+    }
 }
 
 data class UserPreferences(
@@ -364,5 +390,7 @@ data class UserPreferences(
     val hasShownScanTutorial: Boolean = false,
     val smsScanMonths: Int = 3, // Default to 3 months
     val smsScanAllTime: Boolean = false, // Default to false
-    val baseCurrency: String = "INR" // Default to INR
+    val baseCurrency: String = "INR", // Default to INR
+    val budgetLimit: Float = 0.0f, // Default to 0 (disabled)
+    val budgetBank: String? = null
 )

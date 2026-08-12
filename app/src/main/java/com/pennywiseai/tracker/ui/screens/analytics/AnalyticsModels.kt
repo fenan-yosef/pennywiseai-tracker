@@ -13,6 +13,18 @@ enum class AnalyticsTab(val label: String) {
     TRENDS("Trends")
 }
 
+data class BudgetUiState(
+    val limit: Float = 0f,
+    val bank: String? = null,
+    val currentSpent: Float = 0f,
+    val dailyBurnRate: Float = 0f,
+    val projectedSpending: Float = 0f,
+    val isExceeded: Boolean = false,
+    val willExceed: Boolean = false,
+    val exceedDayOfMonth: Int = 0,
+    val remainingDays: Int = 0
+)
+
 // ==================== Core UI State ====================
 
 data class AnalyticsUiState(
@@ -61,7 +73,8 @@ data class AnalyticsUiState(
     /** Hero: % change vs previous equal-length period (null if unavailable) */
     val spendingChangePercent: Float? = null,
     /** Hero: ahead of pace (>0), behind (<0), or on pace (~0); only for This Month */
-    val pacePercent: Float? = null
+    val pacePercent: Float? = null,
+    val budgetState: BudgetUiState = BudgetUiState()
 )
 
 // ==================== Base Models ====================

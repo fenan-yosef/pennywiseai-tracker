@@ -28,6 +28,7 @@ import kotlin.math.sqrt
 @HiltViewModel
 class AnalyticsViewModel @Inject constructor(
     private val transactionRepository: TransactionRepository,
+    private val userPreferencesRepository: com.pennywiseai.tracker.data.preferences.UserPreferencesRepository,
     private val savedStateHandle: androidx.lifecycle.SavedStateHandle
 ) : ViewModel() {
 
@@ -103,9 +104,24 @@ class AnalyticsViewModel @Inject constructor(
         customDateRange,
         _transactionTypeFilter,
         _selectedCurrency,
-        _selectedBank
-    ) { period, customRange, typeFilter, currency, bank ->
-        FilterState(period, customRange, typeFilter, currency, bank)
+        _selectedBank,
+        userPreferencesRepository.userPreferences
+    ) { args: Array<Any?> ->
+        val period = args[0] as TimePeriod
+        val customRange = args[1] as? Pair<LocalDate, LocalDate>
+        val typeFilter = args[2] as TransactionTypeFilter
+        val currency = args[3] as String
+        val bank = args[4] as? String
+        val prefs = args[5] as com.pennywiseai.tracker.data.preferences.UserPreferences
+        FilterState(
+            period = period,
+            customRange = customRange,
+            typeFilter = typeFilter,
+            currency = currency,
+            bank = bank,
+            budgetLimit = prefs.budgetLimit,
+            budgetBank = prefs.budgetBank
+        )
     }.flatMapLatest { filterState ->
         val dateRange = if (filterState.period == TimePeriod.CUSTOM) {
             val customRange = filterState.customRange
@@ -215,6 +231,12 @@ class AnalyticsViewModel @Inject constructor(
         }
     }
 
+    fun updateBudgetSettings(limit: Float, bank: String?) {
+        viewModelScope.launch {
+            userPreferencesRepository.updateBudgetSettings(limit, bank)
+        }
+    }
+
     private fun buildUiState(
         filterState: FilterState,
         dateRange: Pair<LocalDate, LocalDate>,
@@ -223,6 +245,13 @@ class AnalyticsViewModel @Inject constructor(
         sixMonthTransactions: List<TransactionEntity>,
         previousTransactions: List<TransactionEntity>
     ): AnalyticsUiState {
+        val budgetState = calculateBudgetState(
+            limit = filterState.budgetLimit,
+            bank = filterState.budgetBank,
+            sixMonthTransactions = sixMonthTransactions,
+            currency = filterState.currency
+        )
+
         val bankCounts = currencyTransactions
             .groupBy { it.bankName ?: "Unknown Bank" }
             .mapValues { it.value.size }
@@ -476,7 +505,8 @@ class AnalyticsViewModel @Inject constructor(
             todayAmount = insights.todayAmount,
             periodTotal = periodTotal,
             spendingChangePercent = comparisonData?.spendingChangePercent,
-            pacePercent = pacePercent
+            pacePercent = pacePercent,
+            budgetState = budgetState
         )
     }
 
@@ -887,6 +917,62 @@ class AnalyticsViewModel @Inject constructor(
             )
         }
     }
+
+    private fun calculateBudgetState(
+        limit: Float,
+        bank: String?,
+        sixMonthTransactions: List<TransactionEntity>,
+        currency: String
+    ): BudgetUiState {
+        if (limit <= 0f) return BudgetUiState()
+
+        val today = LocalDate.now()
+        val startOfMonth = today.withDayOfMonth(1)
+
+        val currentMonthExpenses = sixMonthTransactions.filter { txn ->
+            val date = txn.dateTime.toLocalDate()
+            !date.isBefore(startOfMonth) && !date.isAfter(today) &&
+                    txn.transactionType == TransactionType.EXPENSE &&
+                    txn.currency == currency &&
+                    (bank == null || txn.bankName == bank)
+        }
+
+        val currentSpent = currentMonthExpenses.sumOf { it.amount.toDouble() }.toFloat()
+
+        val currentDayOfMonth = today.dayOfMonth
+        val totalDaysInMonth = today.lengthOfMonth()
+        val remainingDays = totalDaysInMonth - currentDayOfMonth
+
+        val dailyBurnRate = if (currentDayOfMonth > 0) {
+            currentSpent / currentDayOfMonth
+        } else {
+            0f
+        }
+
+        val projectedSpending = dailyBurnRate * totalDaysInMonth
+
+        val isExceeded = currentSpent > limit
+        val willExceed = projectedSpending > limit
+
+        val exceedDayOfMonth = if (dailyBurnRate > 0f) {
+            val day = (limit / dailyBurnRate).toInt()
+            day.coerceIn(1, totalDaysInMonth)
+        } else {
+            0
+        }
+
+        return BudgetUiState(
+            limit = limit,
+            bank = bank,
+            currentSpent = currentSpent,
+            dailyBurnRate = dailyBurnRate,
+            projectedSpending = projectedSpending,
+            isExceeded = isExceeded,
+            willExceed = willExceed,
+            exceedDayOfMonth = exceedDayOfMonth,
+            remainingDays = remainingDays
+        )
+    }
 }
 
 private data class FilterState(
@@ -894,5 +980,7 @@ private data class FilterState(
     val customRange: Pair<LocalDate, LocalDate>?,
     val typeFilter: TransactionTypeFilter,
     val currency: String,
-    val bank: String?
+    val bank: String?,
+    val budgetLimit: Float,
+    val budgetBank: String?
 )

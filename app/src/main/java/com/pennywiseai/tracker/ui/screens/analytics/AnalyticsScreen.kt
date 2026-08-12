@@ -74,6 +74,7 @@ fun AnalyticsScreen(
                     showEmptyHint = uiState.transactionCount == 0,
                     onSelectTab = { viewModel.selectTab(it) },
                     onNavigateToTransactions = onNavigateToTransactions,
+                    onUpdateBudget = { limit, bank -> viewModel.updateBudgetSettings(limit, bank) },
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -103,6 +104,7 @@ private fun AnalyticsContent(
     showEmptyHint: Boolean,
     onSelectTab: (AnalyticsTab) -> Unit,
     onNavigateToTransactions: (category: String?, merchant: String?, period: String?, currency: String?) -> Unit,
+    onUpdateBudget: (Float, String?) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier.fillMaxSize()) {
@@ -144,7 +146,10 @@ private fun AnalyticsContent(
                             onNavigateToTransactions(it.name, null, selectedPeriod.name, selectedCurrency)
                         }
                     )
-                    AnalyticsTab.TRENDS -> TrendsTab(state = uiState)
+                    AnalyticsTab.TRENDS -> TrendsTab(
+                        state = uiState,
+                        onUpdateBudget = onUpdateBudget
+                    )
                 }
             }
         }
