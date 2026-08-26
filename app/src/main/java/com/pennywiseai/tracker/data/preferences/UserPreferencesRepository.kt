@@ -52,6 +52,12 @@ class UserPreferencesRepository @Inject constructor(
         // Export reminder preferences
         val EXPORT_REMINDER_ENABLED = booleanPreferencesKey("export_reminder_enabled")
         val EXPORT_REMINDER_DAY = intPreferencesKey("export_reminder_day") // 1=Monday ... 7=Sunday
+
+        // Telegram Backup preferences
+        val TELEGRAM_BOT_TOKEN = stringPreferencesKey("telegram_bot_token")
+        val TELEGRAM_CHAT_ID = stringPreferencesKey("telegram_chat_id")
+        val TELEGRAM_AUTO_BACKUP_ENABLED = booleanPreferencesKey("telegram_auto_backup_enabled")
+        val TELEGRAM_LAST_BACKUP_TIME = longPreferencesKey("telegram_last_backup_time")
     }
 
     val userPreferences: Flow<UserPreferences> = context.dataStore.data
@@ -378,6 +384,47 @@ class UserPreferencesRepository @Inject constructor(
             } else {
                 preferences[PreferencesKeys.BUDGET_BANK] = bank
             }
+        }
+    }
+
+    // Telegram Backup Flows & Setters
+    val telegramBotToken: Flow<String> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.TELEGRAM_BOT_TOKEN] ?: "8939303827:AAHlQJN2H3Bqlu-txAV6aoO1bKcXwkNl6VQ"
+    }
+
+    val telegramChatId: Flow<String> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.TELEGRAM_CHAT_ID] ?: ""
+    }
+
+    val telegramAutoBackupEnabled: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.TELEGRAM_AUTO_BACKUP_ENABLED] ?: false
+    }
+
+    val telegramLastBackupTime: Flow<Long> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.TELEGRAM_LAST_BACKUP_TIME] ?: 0L
+    }
+
+    suspend fun setTelegramBotToken(token: String) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.TELEGRAM_BOT_TOKEN] = token
+        }
+    }
+
+    suspend fun setTelegramChatId(chatId: String) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.TELEGRAM_CHAT_ID] = chatId
+        }
+    }
+
+    suspend fun setTelegramAutoBackupEnabled(enabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.TELEGRAM_AUTO_BACKUP_ENABLED] = enabled
+        }
+    }
+
+    suspend fun setTelegramLastBackupTime(timestamp: Long) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.TELEGRAM_LAST_BACKUP_TIME] = timestamp
         }
     }
 }

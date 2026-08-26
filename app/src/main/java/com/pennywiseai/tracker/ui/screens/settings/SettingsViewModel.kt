@@ -15,7 +15,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import com.pennywiseai.tracker.core.Constants.Links
+import com.pennywiseai.tracker.core.Constants
 import com.pennywiseai.tracker.data.repository.ModelRepository
 import com.pennywiseai.tracker.data.repository.ModelState
 import com.pennywiseai.tracker.data.repository.UnrecognizedSmsRepository
@@ -27,8 +27,13 @@ import com.pennywiseai.tracker.data.backup.ImportResult
 import com.pennywiseai.tracker.data.backup.ImportStrategy
 import android.content.Intent
 import androidx.core.content.FileProvider
-import com.pennywiseai.tracker.core.Constants
+import com.pennywiseai.tracker.data.backup.TelegramUploader
+import com.pennywiseai.tracker.worker.TelegramBackupWorker
 import com.pennywiseai.tracker.worker.ExportReminderScheduler
+import androidx.work.WorkManager
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.ExistingPeriodicWorkPolicy
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.first
@@ -44,7 +49,8 @@ class SettingsViewModel @Inject constructor(
     private val unrecognizedSmsRepository: UnrecognizedSmsRepository,
     private val backupExporter: BackupExporter,
     private val backupImporter: BackupImporter,
-    private val exportReminderScheduler: ExportReminderScheduler
+    private val exportReminderScheduler: ExportReminderScheduler,
+    private val telegramUploader: TelegramUploader
 ) : ViewModel() {
     
     private val downloadManager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
@@ -92,6 +98,18 @@ class SettingsViewModel @Inject constructor(
 
     private val _exportReminderMessage = MutableStateFlow<String?>(null)
     val exportReminderMessage: StateFlow<String?> = _exportReminderMessage.asStateFlow()
+
+    // Telegram Backup State
+    val telegramBotToken = userPreferencesRepository.telegramBotToken
+    val telegramChatId = userPreferencesRepository.telegramChatId
+    val telegramAutoBackupEnabled = userPreferencesRepository.telegramAutoBackupEnabled
+    val telegramLastBackupTime = userPreferencesRepository.telegramLastBackupTime
+
+    private val _isTelegramUploading = MutableStateFlow(false)
+    val isTelegramUploading: StateFlow<Boolean> = _isTelegramUploading.asStateFlow()
+
+    private val _telegramMessage = MutableStateFlow<String?>(null)
+    val telegramMessage: StateFlow<String?> = _telegramMessage.asStateFlow()
 
     init {
         checkDownloadStatus()
@@ -560,6 +578,89 @@ class SettingsViewModel @Inject constructor(
                 exportReminderScheduler.schedule(day)
             }
         }
+    }
+
+    // ==================== Telegram Backup ====================
+
+    fun updateTelegramBotToken(token: String) {
+        viewModelScope.launch {
+            userPreferencesRepository.setTelegramBotToken(token)
+        }
+    }
+
+    fun updateTelegramChatId(chatId: String) {
+        viewModelScope.launch {
+            userPreferencesRepository.setTelegramChatId(chatId)
+        }
+    }
+
+    fun toggleTelegramAutoBackup(enabled: Boolean) {
+        viewModelScope.launch {
+            userPreferencesRepository.setTelegramAutoBackupEnabled(enabled)
+            val workManager = WorkManager.getInstance(context)
+            if (enabled) {
+                val backupRequest = PeriodicWorkRequestBuilder<TelegramBackupWorker>(7, TimeUnit.DAYS).build()
+                workManager.enqueueUniquePeriodicWork(
+                    TelegramBackupWorker.WORK_NAME,
+                    ExistingPeriodicWorkPolicy.KEEP,
+                    backupRequest
+                )
+                _telegramMessage.value = "Automated weekly Telegram backup enabled!"
+            } else {
+                workManager.cancelUniqueWork(TelegramBackupWorker.WORK_NAME)
+                _telegramMessage.value = "Automated weekly Telegram backup disabled."
+            }
+        }
+    }
+
+    fun backupToTelegramNow() {
+        viewModelScope.launch {
+            val token = userPreferencesRepository.telegramBotToken.first()
+            val chatId = userPreferencesRepository.telegramChatId.first()
+
+            if (token.isBlank()) {
+                _telegramMessage.value = "Please specify a Telegram Bot Token first."
+                return@launch
+            }
+            if (chatId.isBlank()) {
+                _telegramMessage.value = "Please enter your Telegram Chat ID / Username first."
+                return@launch
+            }
+
+            _isTelegramUploading.value = true
+            _telegramMessage.value = "Creating backup and uploading to Telegram..."
+
+            val exportResult = backupExporter.exportBackup()
+            if (exportResult is ExportResult.Success) {
+                val file = exportResult.file
+                val timestampStr = java.time.LocalDateTime.now()
+                    .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
+                val caption = "📦 *PennyWise Manual Backup*\n📅 Date: $timestampStr\n📁 File: `${file.name}`"
+
+                val uploadResult = telegramUploader.uploadBackupFile(
+                    botToken = token,
+                    chatId = chatId,
+                    backupFile = file,
+                    caption = caption
+                )
+
+                if (uploadResult.isSuccess) {
+                    userPreferencesRepository.setTelegramLastBackupTime(System.currentTimeMillis())
+                    _telegramMessage.value = "Backup successfully uploaded to Telegram!"
+                } else {
+                    val err = uploadResult.exceptionOrNull()?.message ?: "Upload failed"
+                    _telegramMessage.value = "Failed to upload to Telegram: $err"
+                }
+            } else if (exportResult is ExportResult.Error) {
+                _telegramMessage.value = "Failed to export backup: ${exportResult.message}"
+            }
+
+            _isTelegramUploading.value = false
+        }
+    }
+
+    fun clearTelegramMessage() {
+        _telegramMessage.value = null
     }
 }
 

@@ -3,6 +3,7 @@ package com.pennywiseai.tracker.ui.screens.settings
 import android.content.Intent
 import android.net.Uri
 import android.util.Log
+import android.widget.Toast
 import androidx.compose.animation.*
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -62,11 +63,26 @@ fun SettingsScreen(
     val exportedBackupFile by settingsViewModel.exportedBackupFile.collectAsStateWithLifecycle()
     val exportReminderEnabled by settingsViewModel.exportReminderEnabled.collectAsStateWithLifecycle(initialValue = false)
     val exportReminderDay by settingsViewModel.exportReminderDay.collectAsStateWithLifecycle(initialValue = 5)
+
+    val telegramBotToken by settingsViewModel.telegramBotToken.collectAsStateWithLifecycle(initialValue = "8939303827:AAHlQJN2H3Bqlu-txAV6aoO1bKcXwkNl6VQ")
+    val telegramChatId by settingsViewModel.telegramChatId.collectAsStateWithLifecycle(initialValue = "")
+    val telegramAutoBackupEnabled by settingsViewModel.telegramAutoBackupEnabled.collectAsStateWithLifecycle(initialValue = false)
+    val telegramLastBackupTime by settingsViewModel.telegramLastBackupTime.collectAsStateWithLifecycle(initialValue = 0L)
+    val isTelegramUploading by settingsViewModel.isTelegramUploading.collectAsStateWithLifecycle()
+    val telegramMessage by settingsViewModel.telegramMessage.collectAsStateWithLifecycle()
+
     var showSmsScanDialog by remember { mutableStateOf(false) }
     var showExportOptionsDialog by remember { mutableStateOf(false) }
     var showTimeoutDialog by remember { mutableStateOf(false) }
     var showExportReminderDayDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
+
+    LaunchedEffect(telegramMessage) {
+        telegramMessage?.let { msg ->
+            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+            settingsViewModel.clearTelegramMessage()
+        }
+    }
     
     // File picker for import
     val importLauncher = rememberLauncherForActivityResult(
@@ -517,6 +533,95 @@ fun SettingsScreen(
                                 modifier = Modifier.size(18.dp)
                             )
                         }
+                    }
+                }
+            }
+        }
+        
+        // Telegram Cloud Backup Card
+        PennyWiseCard(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.padding(Dimensions.Padding.content),
+                verticalArrangement = Arrangement.spacedBy(Spacing.sm)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.md),
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(
+                            Icons.Default.CloudUpload,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Column {
+                            Text(
+                                text = "Telegram Cloud Backup",
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                text = "Automated & manual backups to Telegram",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    Switch(
+                        checked = telegramAutoBackupEnabled,
+                        onCheckedChange = { settingsViewModel.toggleTelegramAutoBackup(it) }
+                    )
+                }
+
+                OutlinedTextField(
+                    value = telegramChatId,
+                    onValueChange = { settingsViewModel.updateTelegramChatId(it) },
+                    label = { Text("Telegram Chat ID / Username") },
+                    placeholder = { Text("e.g. @mybackuppennywisebot or chat ID") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                if (telegramLastBackupTime > 0L) {
+                    val lastBackupDateStr = remember(telegramLastBackupTime) {
+                        val instant = java.time.Instant.ofEpochMilli(telegramLastBackupTime)
+                        val formatter = java.time.format.DateTimeFormatter.ofPattern("MMM dd, yyyy HH:mm")
+                            .withZone(java.time.ZoneId.systemDefault())
+                        formatter.format(instant)
+                    }
+                    Text(
+                        text = "Last Telegram Backup: $lastBackupDateStr",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                Button(
+                    onClick = { settingsViewModel.backupToTelegramNow() },
+                    enabled = !isTelegramUploading,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    if (isTelegramUploading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text("Uploading Backup...")
+                    } else {
+                        Icon(
+                            Icons.Default.Send,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text("Backup to Telegram Now")
                     }
                 }
             }
