@@ -55,6 +55,7 @@ object BankParserFactory {
         CBEBankParser(),  // Commercial Bank of Ethiopia
         BunaBankParser(), // Buna Bank (Ethiopia)
         BankOfAbyssiniaParser(), // Bank of Abyssinia (Ethiopia)
+        TelebirrParser(), // Telebirr (Ethio telecom wallet, Ethiopia)
         EverestBankParser(),  // Everest Bank (Nepal)
         BancolombiaParser(),  // Bancolombia (Colombia)
         MashreqBankParser(),  // Mashreq Bank (UAE)
@@ -63,7 +64,6 @@ object BankParserFactory {
         PriorbankParser(),  // Priorbank (Belarus)
         AlinmaBankParser(),  // Alinma Bank (Saudi Arabia)
         NMBBankParser(),  // NMB Bank / Nabil Bank (Nepal)
-        MPESAParser(),  // M-PESA (Kenya)
         CIBEgyptParser(),  // CIB - Commercial International Bank (Egypt)
         DhanlaxmiBankParser(),  // Dhanlaxmi Bank (India)
         HuntingtonBankParser(),  // Huntington Bank (USA)

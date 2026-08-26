@@ -172,7 +172,7 @@ fun HomeScreen(
                 start = Dimensions.Padding.content,
                 end = Dimensions.Padding.content,
                 top = Dimensions.Padding.content,
-                bottom = Dimensions.Padding.content + 80.dp // Space for FAB
+                bottom = Dimensions.Padding.content + 16.dp // Space for FAB
             ),
             verticalArrangement = Arrangement.spacedBy(Spacing.md)
         ) {
@@ -1039,8 +1039,8 @@ private fun TransactionSummaryCards(
                         monthlyChange = if (isBankSelected) BigDecimal.ZERO else uiState.monthlyChange,
                         monthlyChangePercent = if (isBankSelected) 0 else uiState.monthlyChangePercent,
                         currency = uiState.selectedCurrency,
-                        currentExpenses = if (isBankSelected) BigDecimal.ZERO else uiState.currentMonthExpenses,
-                        lastExpenses = if (isBankSelected) BigDecimal.ZERO else uiState.lastMonthExpenses,
+                        currentExpenses = uiState.currentMonthExpenses,
+                        lastExpenses = uiState.lastMonthExpenses,
                         titlePrefix = "Bank Balance",
                         onShowBreakdown = { /* TODO */ }
                     )

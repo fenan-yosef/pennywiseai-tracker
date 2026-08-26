@@ -46,6 +46,19 @@ class TransactionsViewModel @Inject constructor(
     private val _categoryFilter = MutableStateFlow<String?>(null)
     val categoryFilter: StateFlow<String?> = _categoryFilter.asStateFlow()
     
+    private val _bankFilter = MutableStateFlow<String?>(null)
+    val bankFilter: StateFlow<String?> = _bankFilter.asStateFlow()
+
+    val availableBanks: StateFlow<List<String>> = transactionRepository.getAllTransactions()
+        .map { list ->
+            list.mapNotNull { it.bankName }.filter { it.isNotBlank() }.distinct().sorted()
+        }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+    
     private val _transactionTypeFilter = MutableStateFlow(TransactionTypeFilter.ALL)
     val transactionTypeFilter: StateFlow<TransactionTypeFilter> = _transactionTypeFilter.asStateFlow()
     
@@ -244,6 +257,7 @@ class TransactionsViewModel @Inject constructor(
             searchQuery.debounce(300).map { "search" },
             selectedPeriod.map { "period" },
             categoryFilter.map { "category" },
+            bankFilter.map { "bank" },
             transactionTypeFilter.map { "typeFilter" },
             selectedCurrency.map { "currency" },
             sortOption.map { "sort" },
@@ -254,6 +268,7 @@ class TransactionsViewModel @Inject constructor(
                 val query = searchQuery.value
                 val period = selectedPeriod.value
                 val category = categoryFilter.value
+                val bank = bankFilter.value
                 val typeFilter = transactionTypeFilter.value
                 val currency = selectedCurrency.value
                 val sort = sortOption.value
@@ -265,7 +280,15 @@ class TransactionsViewModel @Inject constructor(
                         val currencyFilteredTransactions = transactions.filter {
                             it.currency.equals(currency, ignoreCase = true)
                         }
-                        emit(sortTransactions(currencyFilteredTransactions, sort))
+                        // Filter by bank
+                        val bankFilteredTransactions = if (bank.isNullOrBlank() || bank == "All") {
+                            currencyFilteredTransactions
+                        } else {
+                            currencyFilteredTransactions.filter {
+                                it.bankName.equals(bank, ignoreCase = true)
+                            }
+                        }
+                        emit(sortTransactions(bankFilteredTransactions, sort))
                     }
             }
             .onEach { transactions ->
@@ -302,6 +325,10 @@ class TransactionsViewModel @Inject constructor(
     
     fun clearCategoryFilter() {
         _categoryFilter.value = null
+    }
+
+    fun setBankFilter(bank: String?) {
+        _bankFilter.value = if (bank == "All") null else bank
     }
     
     fun setTransactionTypeFilter(filter: TransactionTypeFilter) {

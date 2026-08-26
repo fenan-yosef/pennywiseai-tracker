@@ -19,12 +19,25 @@
 | **Jupiter** | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅* | ✅ |
 | **Amazon Pay** | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅* | ✅ |
 | **IDFC First** | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ |
+| **Telebirr (ET)** | ✅ | ✅ | — | — | ❌ | ❌ | ✅ | ✅ |
+| **M-PESA Ethiopia** | ✅ | ✅ | — | — | ❌ | ❌ | ✅ | ✅ |
+| **CBE (Ethiopia)** | ✅ | ✅ | — | — | ❌ | ❌ | ✅ | ✅ |
+| **Bank of Abyssinia** | ✅ | ✅ | — | — | ❌ | ❌ | ✅ | ✅ |
 
 *Uses default balance patterns (may have limited support)
 
 ---
 
 ## SMS Template Patterns by Bank
+
+### Telebirr (Ethiopia)
+| Type | Template Pattern | Example |
+|------|-----------------|---------|
+| **Transfer out** | `You have transferred ETB XXX to NAME` | You have transferred ETB 160.00 to Nuru Abdo (2519****3931) |
+| **Package pay** | `You have paid ETB XXX for package` | You have paid ETB 34.00 for package Monthly student pack... |
+| **Receive** | `You have received ETB XXX ... from` | You have received ETB 16,000.00 ... from Commercial Bank of Ethiopia |
+| **Fees** | `service fee is ETB X` + `VAT ... ETB Y` | Stored as companion "Telebirr Service Fee" expense |
+| **Sender** | `127` / body markers | Thank you for using telebirr / ethiotelecom.et |
 
 ### HDFC Bank
 | Type | Template Pattern | Example |

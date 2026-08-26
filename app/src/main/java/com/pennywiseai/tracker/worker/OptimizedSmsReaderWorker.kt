@@ -21,6 +21,7 @@ import com.pennywiseai.tracker.data.database.entity.UnrecognizedSmsEntity
 import com.pennywiseai.tracker.data.manager.BalanceUpdatePolicy
 import com.pennywiseai.tracker.data.mapper.toEntity
 import com.pennywiseai.tracker.data.mapper.toEntityType
+import com.pennywiseai.tracker.data.mapper.toFeeCompanionEntity
 import com.pennywiseai.tracker.data.preferences.UserPreferencesRepository
 import com.pennywiseai.tracker.data.repository.AccountBalanceRepository
 import com.pennywiseai.tracker.data.repository.CardRepository
@@ -1032,7 +1033,11 @@ private suspend fun saveParsedTransaction(
                 )
                 return false
             }
-            // Transaction already exists and not deleted - normal deduplication
+            // Duplicate txn — still backfill account balance when SMS has one
+            if (parsedTransaction.balance != null && parsedTransaction.accountLast4 != null) {
+                processBalanceUpdate(parsedTransaction, existingTransaction, existingTransaction.id)
+                Log.d(TAG, "Backfilled balance for duplicate: ${entity.transactionHash}")
+            }
             Log.d(TAG, "Transaction already exists: ${entity.transactionHash}")
             return false
         }
@@ -1112,11 +1117,26 @@ private suspend fun saveParsedTransaction(
 
             // Process balance updates
             processBalanceUpdate(parsedTransaction, finalEntity, rowId)
+
+            parsedTransaction.toFeeCompanionEntity()?.let { feeEntity ->
+                val existingFee = transactionRepository.getTransactionByHash(feeEntity.transactionHash)
+                if (existingFee == null) {
+                    val feeRowId = transactionRepository.insertTransaction(feeEntity)
+                    if (feeRowId != -1L) {
+                        Log.d(TAG, "Saved fee companion transaction with ID: $feeRowId")
+                    }
+                }
+            }
             return true
         } else {
+            // Insert reported duplicate — still try balance backfill
+            if (parsedTransaction.balance != null && parsedTransaction.accountLast4 != null) {
+                processBalanceUpdate(parsedTransaction, entity, -1L)
+                Log.d(TAG, "Backfilled balance after insert duplicate: ${entity.transactionHash}")
+            }
             Log.d(
                 TAG,
-                "Transaction already exists (duplicate), skipping both transaction and balance update: ${entity.transactionHash}"
+                "Transaction already exists (duplicate), skipping transaction insert: ${entity.transactionHash}"
             )
         }
         false

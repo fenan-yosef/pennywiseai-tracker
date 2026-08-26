@@ -16,6 +16,7 @@ import com.pennywiseai.parser.core.bank.SBIBankParser
 import com.pennywiseai.parser.core.ParsedTransaction
 import com.pennywiseai.tracker.data.mapper.toEntity
 import com.pennywiseai.tracker.data.mapper.toEntityType
+import com.pennywiseai.tracker.data.mapper.toFeeCompanionEntity
 import com.pennywiseai.tracker.data.repository.AccountBalanceRepository
 import com.pennywiseai.tracker.data.repository.CardRepository
 import com.pennywiseai.tracker.data.repository.LlmRepository
@@ -278,7 +279,39 @@ class SmsReaderWorker @AssistedInject constructor(
                                 Log.d(TAG, "Skipping previously deleted transaction with hash: ${entity.transactionHash}")
                                 continue
                             }
-                            // Transaction already exists and not deleted - normal deduplication
+                            // Duplicate txn — still backfill account balance when SMS has one
+                            val targetAccountLast4 = parsedTransaction.accountLast4
+                            val smsBalance = parsedTransaction.balance
+                            if (smsBalance != null && targetAccountLast4 != null && !parsedTransaction.isFromCard) {
+                                val existingAccount = accountBalanceRepository.getLatestBalance(
+                                    parsedTransaction.bankName,
+                                    targetAccountLast4
+                                )
+                                val shouldPersist = com.pennywiseai.tracker.data.manager.BalanceUpdatePolicy.shouldPersist(
+                                    existing = existingAccount,
+                                    smsTimestamp = existingTransaction.dateTime,
+                                    newBalance = smsBalance,
+                                    fromSms = true,
+                                    transactionAmount = parsedTransaction.amount
+                                )
+                                if (shouldPersist) {
+                                    accountBalanceRepository.insertBalance(
+                                        AccountBalanceEntity(
+                                            bankName = parsedTransaction.bankName,
+                                            accountLast4 = targetAccountLast4,
+                                            balance = smsBalance,
+                                            timestamp = existingTransaction.dateTime,
+                                            transactionId = existingTransaction.id,
+                                            creditLimit = existingAccount?.creditLimit,
+                                            isCreditCard = existingAccount?.isCreditCard ?: false,
+                                            smsSource = parsedTransaction.smsBody.take(500),
+                                            sourceType = "TRANSACTION",
+                                            currency = parsedTransaction.currency
+                                        )
+                                    )
+                                    Log.d(TAG, "Backfilled balance for duplicate: ${entity.transactionHash}")
+                                }
+                            }
                             Log.d(TAG, "Transaction already exists: ${entity.transactionHash}")
                             continue
                         }
@@ -337,6 +370,18 @@ class SmsReaderWorker @AssistedInject constructor(
                                 if (ruleApplications.isNotEmpty()) {
                                     ruleRepository.saveRuleApplications(ruleApplications)
                                     Log.d(TAG, "Saved ${ruleApplications.size} rule applications for transaction: ${finalEntity.id}")
+                                }
+
+                                parsedTransaction.toFeeCompanionEntity()?.let { feeEntity ->
+                                    val existingFee =
+                                        transactionRepository.getTransactionByHash(feeEntity.transactionHash)
+                                    if (existingFee == null) {
+                                        val feeRowId = transactionRepository.insertTransaction(feeEntity)
+                                        if (feeRowId != -1L) {
+                                            savedCount++
+                                            Log.d(TAG, "Saved fee companion transaction with ID: $feeRowId")
+                                        }
+                                    }
                                 }
                                 
                                 // Only save balance/credit limit information for NEW transactions (not duplicates)

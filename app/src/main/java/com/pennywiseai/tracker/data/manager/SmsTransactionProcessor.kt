@@ -9,6 +9,7 @@ import com.pennywiseai.tracker.data.database.entity.TransactionEntity
 import com.pennywiseai.tracker.data.database.entity.TransactionType
 import com.pennywiseai.tracker.data.mapper.toEntity
 import com.pennywiseai.tracker.data.mapper.toEntityType
+import com.pennywiseai.tracker.data.mapper.toFeeCompanionEntity
 import com.pennywiseai.tracker.data.repository.AccountBalanceRepository
 import com.pennywiseai.tracker.data.repository.CardRepository
 import com.pennywiseai.tracker.data.repository.MerchantMappingRepository
@@ -109,7 +110,12 @@ class SmsTransactionProcessor @Inject constructor(
                     Log.d(TAG, "Skipping previously deleted transaction with hash: ${entity.transactionHash}")
                     return ProcessingResult(false, reason = "Transaction was previously deleted")
                 }
-                // Transaction already exists and not deleted - normal deduplication
+                // Duplicate txn — still backfill account balance when SMS has one
+                // (e.g. Telebirr txs saved before wallet accountLast4 existed).
+                if (parsedTransaction.balance != null && parsedTransaction.accountLast4 != null) {
+                    processBalanceUpdate(parsedTransaction, existingTransaction, existingTransaction.id)
+                    Log.d(TAG, "Backfilled balance for duplicate: ${entity.transactionHash}")
+                }
                 Log.d(TAG, "Transaction already exists: ${entity.transactionHash}")
                 return ProcessingResult(false, reason = "Duplicate transaction")
             }
@@ -177,14 +183,34 @@ class SmsTransactionProcessor @Inject constructor(
                 // Process balance updates
                 processBalanceUpdate(parsedTransaction, finalEntity, rowId)
 
+                saveFeeCompanionIfPresent(parsedTransaction)
+
                 return ProcessingResult(true, transactionId = rowId)
             } else {
+                // Insert reported duplicate — still try balance backfill
+                if (parsedTransaction.balance != null && parsedTransaction.accountLast4 != null) {
+                    processBalanceUpdate(parsedTransaction, finalEntity, -1L)
+                    Log.d(TAG, "Backfilled balance after insert duplicate: ${entity.transactionHash}")
+                }
                 Log.d(TAG, "Transaction already exists (duplicate): ${entity.transactionHash}")
                 return ProcessingResult(false, reason = "Duplicate transaction")
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error saving transaction: ${e.message}")
             return ProcessingResult(false, reason = e.message)
+        }
+    }
+
+    private suspend fun saveFeeCompanionIfPresent(parsedTransaction: ParsedTransaction) {
+        val feeEntity = parsedTransaction.toFeeCompanionEntity() ?: return
+        val existingFee = transactionRepository.getTransactionByHash(feeEntity.transactionHash)
+        if (existingFee != null) {
+            Log.d(TAG, "Fee companion already exists: ${feeEntity.transactionHash}")
+            return
+        }
+        val feeRowId = transactionRepository.insertTransaction(feeEntity)
+        if (feeRowId != -1L) {
+            Log.d(TAG, "Saved fee companion transaction with ID: $feeRowId amount=${feeEntity.amount}")
         }
     }
 

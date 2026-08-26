@@ -88,9 +88,6 @@ Supporting **47+ banks** across **10 countries** with **multi-currency** capabil
 ### 🇨🇴 Colombia (1 bank) - COP $
 - **Bancolombia**
 
-### 🇰🇪 Kenya (1 service) - KES Ksh
-- **M-PESA** - Mobile money service
-
 More banks being added regularly! [Request your bank →](https://github.com/sarim2000/pennywiseai-tracker/issues/new?template=bank_support_request.md)
 
 ## Privacy First

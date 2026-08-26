@@ -19,7 +19,9 @@ data class ParsedTransaction(
     val isFromCard: Boolean = false,
     val currency: String = "INR",
     val fromAccount: String? = null,
-    val toAccount: String? = null
+    val toAccount: String? = null,
+    /** Optional embedded service fee (e.g. Telebirr fee+VAT). Stored as a companion expense when > 0. */
+    val feeAmount: BigDecimal? = null
 ) {
     fun generateTransactionId(): String {
         val normalizedAmount = amount.setScale(2, java.math.RoundingMode.HALF_UP)

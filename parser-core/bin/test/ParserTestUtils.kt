@@ -24,7 +24,8 @@ data class ExpectedTransaction(
     val creditLimit: BigDecimal? = null,
     val isFromCard: Boolean? = null,
     val fromAccount: String? = null,
-    val toAccount: String? = null
+    val toAccount: String? = null,
+    val feeAmount: BigDecimal? = null
 )
 
 data class ParserTestCase(
@@ -130,6 +131,7 @@ object ParserTestUtils {
                 ) { "'$it'" }
             }
             expected.toAccount?.let { checkField(result.toAccount, it, "To account") { "'$it'" } }
+            expected.feeAmount?.let { checkField(result.feeAmount, it, "Fee amount") }
         }
     }
 
@@ -279,7 +281,12 @@ object ParserTestUtils {
         fieldName: String,
         formatter: (T) -> String = { it.toString() }
     ) {
-        if (actual != expected) {
+        val mismatch = when {
+            actual is BigDecimal && expected is BigDecimal ->
+                actual.compareTo(expected) != 0
+            else -> actual != expected
+        }
+        if (mismatch) {
             add("$fieldName mismatch: expected ${formatter(expected)}, got ${formatter(actual)}")
         }
     }

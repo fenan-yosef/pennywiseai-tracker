@@ -127,8 +127,17 @@ class HomeViewModel @Inject constructor(
                     }
                 }
 
-                // Compute per-bank balances (converted to selected currency when possible)
-                val bankNames = balances.map { it.bankName ?: "Unknown Bank" }.distinct()
+                // Compute per-bank balances (converted to selected currency when possible).
+                // Include banks that have transactions but no account_balances row yet (e.g. wallets
+                // before a balance SMS was linked) so Home tabs match Analysis.
+                val txBankNames = try {
+                    transactionRepository.getTransactionCountsByBank().keys
+                } catch (_: Exception) {
+                    emptySet()
+                }
+                val bankNames = (
+                    balances.map { it.bankName ?: "Unknown Bank" } + txBankNames
+                    ).distinct()
                 val bankBalances = bankNames.associateWith { bank ->
                     val accountsForBank = regularAccounts.filter { (it.bankName ?: "Unknown Bank") == bank }
                     accountsForBank.sumOf { account ->
@@ -141,11 +150,12 @@ class HomeViewModel @Inject constructor(
                     }
                 }
 
-                // Initialize per-bank visibility preferences if not set
+                // Merge new banks into visibility prefs so wallets like Telebirr
+                // aren't stuck with history/balance hidden after first init.
                 val currentHistory = _uiState.value.banksShowHistory
                 val currentBalancePrefs = _uiState.value.banksShowBalance
-                val defaultHistory = if (currentHistory.isEmpty()) bankNames.toSet() else currentHistory
-                val defaultBalance = if (currentBalancePrefs.isEmpty()) bankNames.toSet() else currentBalancePrefs
+                val defaultHistory = currentHistory + bankNames.toSet()
+                val defaultBalance = currentBalancePrefs + bankNames.toSet()
 
                 _uiState.value = _uiState.value.copy(
                     accountBalances = regularAccounts,  // Only regular bank accounts
@@ -181,12 +191,17 @@ class HomeViewModel @Inject constructor(
         }
         
         viewModelScope.launch {
-            // Load recent transactions (last 3)
+            // Load recent transactions (last 3) — only when viewing All banks so we
+            // don't overwrite a bank-filtered list from selectBank().
             transactionRepository.getRecentTransactions(limit = 3).collect { transactions ->
-                _uiState.value = _uiState.value.copy(
-                    recentTransactions = transactions,
-                    isLoading = false
-                )
+                if (_uiState.value.selectedBank == null) {
+                    _uiState.value = _uiState.value.copy(
+                        recentTransactions = transactions,
+                        isLoading = false
+                    )
+                } else {
+                    _uiState.value = _uiState.value.copy(isLoading = false)
+                }
                 // Update per-bank counts
                 updateBankTransactionCounts()
             }
@@ -380,8 +395,16 @@ class HomeViewModel @Inject constructor(
                     }
                 }
 
-                // Compute per-bank balances (converted to selected currency when possible)
-                val bankNames = balances.map { it.bankName ?: "Unknown Bank" }.distinct()
+                // Compute per-bank balances (converted to selected currency when possible).
+                // Include banks that have transactions but no account_balances row yet.
+                val txBankNames = try {
+                    transactionRepository.getTransactionCountsByBank().keys
+                } catch (_: Exception) {
+                    emptySet()
+                }
+                val bankNames = (
+                    balances.map { it.bankName ?: "Unknown Bank" } + txBankNames
+                    ).distinct()
                 val bankBalances = bankNames.associateWith { bank ->
                     val accountsForBank = regularAccounts.filter { (it.bankName ?: "Unknown Bank") == bank }
                     accountsForBank.sumOf { account ->
@@ -394,11 +417,11 @@ class HomeViewModel @Inject constructor(
                     }
                 }
 
-                // Preserve existing prefs or initialize defaults
+                // Merge new banks into visibility prefs so wallets aren't stuck hidden.
                 val currentHistory = _uiState.value.banksShowHistory
                 val currentBalancePrefs = _uiState.value.banksShowBalance
-                val defaultHistory = if (currentHistory.isEmpty()) bankNames.toSet() else currentHistory
-                val defaultBalance = if (currentBalancePrefs.isEmpty()) bankNames.toSet() else currentBalancePrefs
+                val defaultHistory = currentHistory + bankNames.toSet()
+                val defaultBalance = currentBalancePrefs + bankNames.toSet()
 
                 _uiState.value = _uiState.value.copy(
                     accountBalances = regularAccounts,  // Only regular bank accounts

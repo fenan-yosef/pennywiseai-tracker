@@ -75,9 +75,16 @@ abstract class BankParser {
             timestamp = timestamp,
             bankName = getBankName(),
             isFromCard = detectIsCard(smsBody),
-            currency = getCurrency()
+            currency = getCurrency(),
+            feeAmount = extractFeeAmount(smsBody)
         )
     }
+
+    /**
+     * Optional service fee extracted from the same SMS as the principal amount.
+     * Defaults to null; parsers with embedded fees (Telebirr, M-PESA Ethiopia) override.
+     */
+    protected open fun extractFeeAmount(message: String): BigDecimal? = null
 
     /**
      * Checks if the message is a transaction message (not OTP, promotional, etc.)
