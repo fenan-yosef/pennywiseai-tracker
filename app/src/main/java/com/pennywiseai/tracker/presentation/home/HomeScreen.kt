@@ -164,8 +164,7 @@ fun HomeScreen(
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
     ) { paddingValues ->
     Box(modifier = Modifier
-        .fillMaxSize()
-        .padding(paddingValues)) {
+        .fillMaxSize()) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(

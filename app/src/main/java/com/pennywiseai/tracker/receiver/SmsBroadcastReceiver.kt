@@ -221,9 +221,9 @@ class SmsBroadcastReceiver : BroadcastReceiver() {
                     .setContentIntent(pendingIntent)
                     .setAutoCancel(true)
 
-                // Add quick action buttons for top categories (only if different from current)
+                // Add quick action buttons for top categories (only if different from current, max 2 to fit Dismiss)
                 val notificationId = transactionId.toInt()
-                topCategories.filter { it != category }.take(3).forEachIndexed { index, topCategory ->
+                topCategories.filter { it != category }.take(2).forEachIndexed { index, topCategory ->
                     val categoryIntent = Intent(context, NotificationActionReceiver::class.java).apply {
                         action = NotificationActionReceiver.ACTION_CHANGE_CATEGORY
                         putExtra(NotificationActionReceiver.EXTRA_TRANSACTION_ID, transactionId)
@@ -238,12 +238,37 @@ class SmsBroadcastReceiver : BroadcastReceiver() {
                         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                     )
 
+                    val actionLabel = when (topCategory) {
+                        "Food & Dining" -> "Tag as Food"
+                        "Transportation" -> "Tag as Transport"
+                        "Shopping" -> "Tag as Shopping"
+                        else -> "Tag as $topCategory"
+                    }
+
                     notificationBuilder.addAction(
                         0, // No icon for actions
-                        topCategory,
+                        actionLabel,
                         categoryPendingIntent
                     )
                 }
+
+                // Add Dismiss action button to easily close the alert
+                val dismissIntent = Intent(context, NotificationActionReceiver::class.java).apply {
+                    action = NotificationActionReceiver.ACTION_CONFIRM_TRANSACTION
+                    putExtra(NotificationActionReceiver.EXTRA_TRANSACTION_ID, transactionId)
+                    putExtra(NotificationActionReceiver.EXTRA_NOTIFICATION_ID, notificationId)
+                }
+                val dismissPendingIntent = PendingIntent.getBroadcast(
+                    context,
+                    transactionId.toInt() + 100, // Unique request code
+                    dismissIntent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+                notificationBuilder.addAction(
+                    0, // No icon for actions
+                    "Dismiss",
+                    dismissPendingIntent
+                )
 
                 val notification = notificationBuilder.build()
                 notificationManager.notify(notificationId, notification)

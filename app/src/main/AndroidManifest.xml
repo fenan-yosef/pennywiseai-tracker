@@ -84,6 +84,7 @@
             <intent-filter>
                 <action android:name="com.pennywiseai.tracker.ACTION_DELETE_TRANSACTION" />
                 <action android:name="com.pennywiseai.tracker.ACTION_CONFIRM_TRANSACTION" />
+                <action android:name="com.pennywiseai.tracker.ACTION_CHANGE_CATEGORY" />
             </intent-filter>
         </receiver>
     </application>
